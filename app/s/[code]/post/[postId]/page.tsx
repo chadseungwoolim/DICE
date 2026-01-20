@@ -140,7 +140,7 @@ export default function PostDetailPage() {
           marginBottom: 20,
         }}
       >
-        ❤️ 좋아요 {likeCount}
+         좋아요 {likeCount}
       </button>
 
       {/* 댓글 목록 */}

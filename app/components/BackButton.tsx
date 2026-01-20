@@ -1,28 +1,32 @@
 "use client";
+
 import { useRouter } from "next/navigation";
 
-export default function BackButton() {
+export default function BackButton({ fallback = "/" }: { fallback?: string }) {
   const router = useRouter();
+
   return (
     <button
-      onClick={() => router.back()}
+      type="button"
+      onClick={() => {
+        if (window.history.length > 1) router.back();
+        else router.push(fallback);
+      }}
+      aria-label="back"
       style={{
-        position: "fixed",
-        top: 16,
-        left: 16,
-        zIndex: 1000,
-        width: 56,
-        height: 56,
-        borderRadius: "50%",
-        background: "var(--orange)",
-        color: "#000",
+        width: 54,
+        height: 54,
+        borderRadius: 999,
+        border: "2px solid var(--orange)",
+        background: "transparent",
+        color: "var(--orange)",
         fontWeight: 900,
-        border: "none",
+        display: "grid",
+        placeItems: "center",
         cursor: "pointer",
-        boxShadow: "0 6px 18px rgba(0,0,0,0.25)",
       }}
     >
-      뒤로<br />가기
+      뒤로가기
     </button>
   );
 }
