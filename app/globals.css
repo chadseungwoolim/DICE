@@ -61,7 +61,7 @@ img, canvas, video { display: block; max-width: 100%; }
 main { flex: 1; width: 100%; }
 .foot {
   border-top: 1px solid var(--line); padding: 10px 20px;
-  display: flex; justify-content: space-between; font-size: 10px; letter-spacing: 0.12em; color: var(--dim); text-transform: uppercase;
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 20px; font-size: 10px; letter-spacing: 0.12em; color: var(--dim); text-transform: uppercase;
 }
 .wrap { max-width: 1320px; margin: 0 auto; padding: 0 20px; }
 

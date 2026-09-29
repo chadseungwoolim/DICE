@@ -23,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main>{children}</main>
         <footer className="foot">
           <span>A<sub>k</sub> = U<sub>k</sub>Σ<sub>k</sub>V<sub>k</sub><sup>T</sup></span>
+          <span>BUSAN IL/L2K1</span>
           <span>client-side compression / no account</span>
         </footer>
       </body>
