@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ak</string>
+    <string name="title_activity_main">Ak</string>
+    <string name="package_name">com.chadseungwoolim.ak</string>
+    <string name="custom_url_scheme">com.chadseungwoolim.ak</string>
+</resources>

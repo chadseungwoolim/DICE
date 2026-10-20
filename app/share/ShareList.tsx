@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { viewHref } from "@/lib/platform";
 import { listShares, remove, saveShares, shareLink, storageReady, type ShareRec } from "@/lib/store";
 import { bytes, pct } from "@/lib/fmt";
 
@@ -37,7 +38,7 @@ export default function ShareList() {
   }
   function go() {
     const m = open.trim().match(/([twm][A-Za-z0-9]{10})\s*$/);
-    if (m) window.location.href = `/v/${m[1]}`;
+    if (m) window.location.href = viewHref(m[1]);
     else setMsg("not a valid link or id");
   }
 
@@ -45,7 +46,7 @@ export default function ShareList() {
     <>
       <div className="section-head">
         <div className="h1">Share</div>
-        <div className="row" style={{ gap: 24 }}>
+        <div className="row stats" style={{ gap: "6px 24px", flexWrap: "wrap" }}>
           <span className="label num">{items.length} links</span>
           <span className="label num">sent {bytes(total)}</span>
           <span className="label num">originals {bytes(totalOrig)}</span>
@@ -61,7 +62,8 @@ export default function ShareList() {
       {items.length === 0 ? (
         <p className="note" style={{ padding: "40px 0" }}>이 브라우저에서 만든 공유 링크가 없습니다. COMPRESS에서 파일을 압축한 뒤 SHARE를 누르면 여기에 기록됩니다.</p>
       ) : (
-        <div style={{ overflowX: "auto", margin: "16px 0 32px" }}>
+        <>
+        <div className="share-table" style={{ overflowX: "auto", margin: "16px 0 32px" }}>
           <table className="t">
             <thead>
               <tr>
@@ -82,7 +84,7 @@ export default function ShareList() {
                   <td style={{ width: 56 }}>
                     {s.thumb ? <img src={s.thumb} alt="" style={{ width: 48, height: 36, objectFit: "cover", border: "1px solid var(--line)" }} /> : null}
                   </td>
-                  <td style={{ textAlign: "left" }}><a href={`/v/${s.id}`}>{s.id}</a></td>
+                  <td style={{ textAlign: "left" }}><a href={viewHref(s.id)}>{s.id}</a></td>
                   <td style={{ textAlign: "left", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</td>
                   <td style={{ textAlign: "left" }}>{s.info}</td>
                   <td>{bytes(s.size)}</td>
@@ -102,6 +104,27 @@ export default function ShareList() {
           </table>
           <p className="note" style={{ marginTop: 10 }}>delete: 서버에서 파일 삭제 (업로드한 브라우저만 가능). forget: 이 목록에서만 제거, 링크는 유지됩니다.</p>
         </div>
+        <div className="share-cards">
+          {items.map((s) => (
+            <div key={s.id} className="share-card">
+              <a href={viewHref(s.id)} className="share-card-main">
+                {s.thumb ? <img src={s.thumb} alt="" /> : <span className="share-card-noimg" />}
+                <span style={{ minWidth: 0 }}>
+                  <span className="mono" style={{ display: "block" }}>{s.id}</span>
+                  <span className="label num" style={{ display: "block", marginTop: 2 }}>{bytes(s.size)} / {pct(1 - s.size / s.orig, 1)} smaller</span>
+                  <span className="note" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.info} / {new Date(s.created).toLocaleDateString()}</span>
+                </span>
+              </a>
+              <div className="row" style={{ gap: 6 }}>
+                <button className="btn ghost" style={{ flex: 1, height: 30 }} onClick={() => copy(s.id)}>{copied === s.id ? "copied" : "copy"}</button>
+                {s.owned && <button className="btn ghost" style={{ flex: 1, height: 30 }} onClick={() => del(s.id)}>delete</button>}
+                <button className="btn ghost" style={{ flex: 1, height: 30 }} onClick={() => forget(s.id)}>forget</button>
+              </div>
+            </div>
+          ))}
+          <p className="note" style={{ margin: "10px 0 28px" }}>delete: 서버에서 파일 삭제 (업로드한 기기만 가능). forget: 이 목록에서만 제거, 링크는 유지됩니다.</p>
+        </div>
+        </>
       )}
     </>
   );

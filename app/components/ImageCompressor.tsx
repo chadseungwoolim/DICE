@@ -199,7 +199,7 @@ export default function ImageCompressor({ file, onReset }: { file: File; onReset
             <div className="ctl-head">
               <span className="label">chroma rank k<sub>c</sub></span>
               <label className="label" style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <input type="checkbox" checked={p.kcAuto} onChange={(e) => set({ kcAuto: e.target.checked, kc })} /> auto ⌈k/4⌉
+                <input type="checkbox" checked={p.kcAuto} onChange={(e) => set({ kcAuto: e.target.checked, kc })} /> auto <span className="m">⌈k/4⌉</span>
               </label>
             </div>
             <div className="row">

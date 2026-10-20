@@ -787,6 +787,206 @@
   function dotSelf(a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i] * a[i]; return s; }
 
   /* ------------------------------------------------------------------ */
+  /* .akv video codec: SVD in time, then SVD in space                    */
+  /*                                                                     */
+  /* For one channel, stack the T frames as columns of M (N pixels x T): */
+  /*   M = mean 1ᵀ + Σ_j σ_j u_j v_jᵀ        (temporal SVD of M − mean)  */
+  /* Keep r modes. Each spatial mode u_j (and the mean frame) is an      */
+  /* image (rows x cols) that is itself stored as a rank-k SVD, exactly  */
+  /* like a .ak channel. The time signal c_j(t) = σ_j v_j(t) is stored   */
+  /* with tbits per sample. Decoding: frame_t = mean + Σ_j c_j(t) img_j. */
+  /*                                                                     */
+  /* header (16 bytes, little endian)                                    */
+  /*   0 'A' 'V'  2 version = 1  3 flags bit0 = deflate                  */
+  /*   4 width u16  6 height u16  8 frames u16  10 fps*100 u16           */
+  /*  12 nch u8 (1 or 3)  13 bits u8  14 tbits u8  15 reserved           */
+  /* per channel: r u8, mean block, r x (block, tstep f16, T bytes)      */
+  /* block = rows u16, cols u16, k u16, k x (stepA,stepB f16), vectors   */
+  /* ------------------------------------------------------------------ */
+  function blockSize(k, rows, cols) { return 6 + k * 4 + k * (rows + cols); }
+
+  function writeBlock(out, dv, pos, svd, k, rows, cols, Q) {
+    k = Math.max(0, Math.min(k, svd.r));
+    while (k > 0 && !(svd.s[k - 1] > 0)) k--;
+    dv.setUint16(pos, rows, true); dv.setUint16(pos + 2, cols, true); dv.setUint16(pos + 4, k, true); pos += 6;
+    var vecs = [], i, t;
+    for (i = 0; i < k; i++) {
+      var rt = Math.sqrt(svd.s[i]);
+      var a = new Float64Array(rows), b = new Float64Array(cols), ma = 0, mb = 0;
+      for (t = 0; t < rows; t++) { a[t] = rt * svd.U[i][t]; if (Math.abs(a[t]) > ma) ma = Math.abs(a[t]); }
+      for (t = 0; t < cols; t++) { b[t] = rt * svd.V[i][t]; if (Math.abs(b[t]) > mb) mb = Math.abs(b[t]); }
+      var ha = toF16(ma / Q), hb = toF16(mb / Q);
+      dv.setUint16(pos, ha, true); dv.setUint16(pos + 2, hb, true); pos += 4;
+      vecs.push([a, b, fromF16(ha), fromF16(hb)]);
+    }
+    for (i = 0; i < k; i++) {
+      pos = writeVec(out, pos, vecs[i][0], rows, vecs[i][2], Q, true);
+      pos = writeVec(out, pos, vecs[i][1], cols, vecs[i][3], Q, true);
+    }
+    return pos;
+  }
+
+  function readBlock(body, dv, pos) {
+    var rows = dv.getUint16(pos, true), cols = dv.getUint16(pos + 2, true), k = dv.getUint16(pos + 4, true), i, t, q, prev;
+    pos += 6;
+    var steps = [];
+    for (i = 0; i < k; i++) { steps.push([fromF16(dv.getUint16(pos, true)), fromF16(dv.getUint16(pos + 2, true))]); pos += 4; }
+    var A = [], B = [];
+    for (i = 0; i < k; i++) {
+      var a = new Float32Array(rows), b = new Float32Array(cols);
+      prev = 0; for (t = 0; t < rows; t++) { q = unzig(body[pos + t]) + prev; prev = q; a[t] = q * steps[i][0]; } pos += rows;
+      prev = 0; for (t = 0; t < cols; t++) { q = unzig(body[pos + t]) + prev; prev = q; b[t] = q * steps[i][1]; } pos += cols;
+      A.push(a); B.push(b);
+    }
+    return { ch: { rows: rows, cols: cols, k: k, A: A, B: B }, pos: pos };
+  }
+
+  // frames: array of RGBA (Uint8ClampedArray) of size w x h
+  function videoPlanes(frames, w, h, mono) {
+    var T = frames.length, Y = [], Cb = [], Cr = [], cw = (w + 1) >> 1, chh = (h + 1) >> 1;
+    for (var t = 0; t < T; t++) {
+      var P = rgbaToPlanes(frames[t], w, h);
+      Y.push(P.Y);
+      if (!mono) { Cb.push(downsample2(P.Cb, w, h).P); Cr.push(downsample2(P.Cr, w, h).P); }
+    }
+    var out = [{ planes: Y, rows: h, cols: w }];
+    if (!mono) { out.push({ planes: Cb, rows: chh, cols: cw }); out.push({ planes: Cr, rows: chh, cols: cw }); }
+    return out;
+  }
+
+  function temporalSVD(planes, N) {
+    var T = planes.length, mean = new Float64Array(N), i, t;
+    for (t = 0; t < T; t++) { var p = planes[t]; for (i = 0; i < N; i++) mean[i] += p[i]; }
+    for (i = 0; i < N; i++) mean[i] /= T;
+    var A = new Float64Array(N * T);
+    for (t = 0; t < T; t++) { var q = planes[t]; for (i = 0; i < N; i++) A[i * T + t] = q[i] - mean[i]; }
+    return { mean: mean, svd: svdGram(A, N, T) };
+  }
+
+  // params: { bits, tbits, chan: [{ r, kMean, kMode }, ...] } (one entry per channel)
+  async function encodeAKV(frames, w, h, fps, params) {
+    var mono = params.chan.length === 1;
+    var chans = videoPlanes(frames, w, h, mono), T = frames.length;
+    // zigzag deltas of values in [-Q, Q] must fit in one byte: 4Q <= 255, so at most 7 bits
+    var bits = Math.max(3, Math.min(7, params.bits | 0)), tbits = Math.max(3, Math.min(7, params.tbits | 0));
+    var Q = (1 << (bits - 1)) - 1, TQ = (1 << (tbits - 1)) - 1;
+    var plan = [], size = 0, c, j, t;
+    for (c = 0; c < chans.length; c++) {
+      var ch = chans[c], N = ch.rows * ch.cols, cp = params.chan[c];
+      var ts = temporalSVD(ch.planes, N);
+      var r = Math.min(cp.r, T);
+      while (r > 0 && !(ts.svd.s[r - 1] > ts.svd.s[0] * 1e-9)) r--;
+      var meanSvd = svdGram(ts.mean, ch.rows, ch.cols), modes = [];
+      for (j = 0; j < r; j++) modes.push(svdGram(ts.svd.U[j], ch.rows, ch.cols));
+      plan.push({ ch: ch, cp: cp, ts: ts, r: r, meanSvd: meanSvd, modes: modes });
+      size += 1 + blockSize(cp.kMean, ch.rows, ch.cols) + r * (blockSize(cp.kMode, ch.rows, ch.cols) + 2 + T);
+    }
+    var body = new Uint8Array(size), dv = new DataView(body.buffer), pos = 0;
+    for (c = 0; c < plan.length; c++) {
+      var pl = plan[c];
+      body[pos++] = pl.r;
+      pos = writeBlock(body, dv, pos, pl.meanSvd, pl.cp.kMean, pl.ch.rows, pl.ch.cols, Q);
+      for (j = 0; j < pl.r; j++) {
+        pos = writeBlock(body, dv, pos, pl.modes[j], pl.cp.kMode, pl.ch.rows, pl.ch.cols, Q);
+        var coef = new Float64Array(T), mx = 0;
+        for (t = 0; t < T; t++) { coef[t] = pl.ts.svd.s[j] * pl.ts.svd.V[j][t]; if (Math.abs(coef[t]) > mx) mx = Math.abs(coef[t]); }
+        var hs = toF16(mx / TQ);
+        dv.setUint16(pos, hs, true); pos += 2;
+        pos = writeVec(body, pos, coef, T, fromF16(hs), TQ, true);
+      }
+    }
+    body = body.subarray(0, pos);
+    var flags = 0, payload = body;
+    if (hasStreams()) {
+      var z = await deflate(body);
+      if (z.length < body.length) { payload = z; flags |= 1; }
+    }
+    var out = new Uint8Array(16 + payload.length), hv = new DataView(out.buffer);
+    out[0] = 0x41; out[1] = 0x56; out[2] = 1; out[3] = flags;
+    hv.setUint16(4, w, true); hv.setUint16(6, h, true); hv.setUint16(8, T, true);
+    hv.setUint16(10, Math.round(fps * 100), true);
+    out[12] = chans.length; out[13] = bits; out[14] = tbits; out[15] = 0;
+    out.set(payload, 16);
+    return out;
+  }
+
+  async function decodeAKV(bytes) {
+    if (bytes.length < 16 || bytes[0] !== 0x41 || bytes[1] !== 0x56) throw new Error('not an .akv file');
+    if (bytes[2] !== 1) throw new Error('unsupported .akv version ' + bytes[2]);
+    var hv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    var flags = bytes[3], w = hv.getUint16(4, true), h = hv.getUint16(6, true), T = hv.getUint16(8, true);
+    var fps = hv.getUint16(10, true) / 100, nch = bytes[12];
+    var body = bytes.subarray(16);
+    if (flags & 1) body = await inflate(body);
+    var dv = new DataView(body.buffer, body.byteOffset, body.byteLength), pos = 0, c, j, t, i;
+    var planesOut = [], ranks = [];
+    for (c = 0; c < nch; c++) {
+      var r = body[pos++];
+      var mb = readBlock(body, dv, pos); pos = mb.pos;
+      var rows = mb.ch.rows, cols = mb.ch.cols, N = rows * cols;
+      var mean = lowRank(mb.ch), imgs = [], coefs = [];
+      for (j = 0; j < r; j++) {
+        var b = readBlock(body, dv, pos); pos = b.pos;
+        imgs.push(lowRank(b.ch));
+        var step = fromF16(dv.getUint16(pos, true)); pos += 2;
+        var cf = new Float32Array(T), prev = 0;
+        for (t = 0; t < T; t++) { var q = unzig(body[pos + t]) + prev; prev = q; cf[t] = q * step; }
+        pos += T;
+        coefs.push(cf);
+      }
+      var frames = [];
+      for (t = 0; t < T; t++) {
+        var F = Float32Array.from(mean);
+        for (j = 0; j < r; j++) {
+          var cj = coefs[j][t], im = imgs[j];
+          if (cj === 0) continue;
+          for (i = 0; i < N; i++) F[i] += cj * im[i];
+        }
+        frames.push(F);
+      }
+      planesOut.push({ frames: frames, rows: rows, cols: cols });
+      ranks.push(r);
+    }
+    var Nf = w * h, rgba = new Uint8ClampedArray(T * Nf * 4);
+    for (t = 0; t < T; t++) {
+      var Y = planesOut[0].frames[t], off = t * Nf * 4, o;
+      if (nch === 1) {
+        for (i = 0, o = off; i < Nf; i++, o += 4) { rgba[o] = Y[i]; rgba[o + 1] = Y[i]; rgba[o + 2] = Y[i]; rgba[o + 3] = 255; }
+      } else {
+        var cpl = planesOut[1];
+        var Cb = upsample2(cpl.frames[t], cpl.cols, cpl.rows, w, h), Cr = upsample2(planesOut[2].frames[t], cpl.cols, cpl.rows, w, h);
+        for (i = 0, o = off; i < Nf; i++, o += 4) {
+          var yv = Y[i], bv = Cb[i], rv = Cr[i];
+          rgba[o] = yv + 1.402 * rv;
+          rgba[o + 1] = yv - 0.344136 * bv - 0.714136 * rv;
+          rgba[o + 2] = yv + 1.772 * bv;
+          rgba[o + 3] = 255;
+        }
+      }
+    }
+    return { rgba: rgba, w: w, h: h, frames: T, fps: fps, nch: nch, ranks: ranks };
+  }
+
+  // Fixed automatic settings for the sharing flow (see README for the measurements).
+  var VIDEO_AUTO = { bits: 5, tbits: 6, chan: [{ r: 8, kMean: 24, kMode: 6 }, { r: 3, kMean: 6, kMode: 3 }, { r: 3, kMean: 6, kMode: 3 }] };
+
+  async function encodeVideo(frames, w, h, fps, params) {
+    params = params || VIDEO_AUTO;
+    var bytes = await encodeAKV(frames, w, h, fps, params);
+    var dec = await decodeAKV(bytes);
+    var se = 0, n = 0, Nf = w * h * 4;
+    for (var t = 0; t < frames.length; t++) {
+      var f = frames[t], off = t * Nf;
+      for (var o = 0; o < Nf; o += 4) {
+        var d0 = dec.rgba[off + o] - f[o], d1 = dec.rgba[off + o + 1] - f[o + 1], d2 = dec.rgba[off + o + 2] - f[o + 2];
+        se += d0 * d0 + d1 * d1 + d2 * d2; n += 3;
+      }
+    }
+    var rmse = Math.sqrt(se / n);
+    return { bytes: bytes, rgba: dec.rgba, w: w, h: h, frames: frames.length, fps: fps, ranks: dec.ranks, rmse: rmse, psnr: 20 * Math.log10(255 / rmse) };
+  }
+
+  /* ------------------------------------------------------------------ */
   /* worker protocol                                                     */
   /* ------------------------------------------------------------------ */
   var handlers = {
@@ -843,13 +1043,23 @@
     e2run: function (p) {
       var r = e2Run(p);
       return { res: r, transfer: [r.orig.buffer, r.normal.buffer, r.modified.buffer, r.diff.buffer] };
+    },
+    videoEncode: async function (p) {
+      var frames = p.frames.map(function (b) { return new Uint8ClampedArray(b); });
+      var res = await encodeVideo(frames, p.w, p.h, p.fps, p.params);
+      return { res: res, transfer: [res.bytes.buffer, res.rgba.buffer] };
+    },
+    videoDecode: async function (p) {
+      var d = await decodeAKV(new Uint8Array(p.bytes));
+      return { res: d, transfer: [d.rgba.buffer] };
     }
   };
 
   var api = {
     symEig: symEig, svdGram: svdGram, svdJacobi: svdJacobi, encodeAK: encodeAK, decodeAK: decodeAK, parseAK: parseAK,
     prepareImage: prepareImage, encodeState: encodeState, eckartYoung: eckartYoung, e2Prepare: e2Prepare, e2Run: e2Run,
-    toF16: toF16, fromF16: fromF16, randomOrthonormal: randomOrthonormal, mulberry32: mulberry32, handlers: handlers
+    toF16: toF16, fromF16: fromF16, randomOrthonormal: randomOrthonormal, mulberry32: mulberry32, handlers: handlers,
+    encodeAKV: encodeAKV, decodeAKV: decodeAKV, encodeVideo: encodeVideo, VIDEO_AUTO: VIDEO_AUTO
   };
 
   if (typeof module !== 'undefined' && module.exports) {

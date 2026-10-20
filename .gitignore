@@ -12,3 +12,18 @@ next-env.d.ts
 # local files not part of the site
 /public/sem/
 !.env.example
+/.app-build-aside/
+# android build outputs
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/captures/
+/android/app/src/main/assets/public/
+/android/app/src/main/assets/capacitor.config.json
+/android/app/src/main/assets/capacitor.plugins.json
+/android/app/src/main/res/xml/config.xml
+*.tgz
+
+# release builds copied to the project root
+/*.apk

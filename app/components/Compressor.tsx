@@ -60,7 +60,7 @@ export default function Compressor() {
         <span className="corner cb" style={{ right: 10, bottom: 8 }}>video → low bitrate re-encode</span>
         <div className="inner">
           <div className="h2">Drop a file</div>
-          <div className="label" style={{ marginTop: 8 }}>click to select / paste</div>
+          <div className="label" style={{ marginTop: 8 }}>tap or click to select / paste</div>
         </div>
         <input
           ref={input}

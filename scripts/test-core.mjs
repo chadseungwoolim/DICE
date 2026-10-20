@@ -32,4 +32,29 @@ ok(lo.bytes.length < hi.bytes.length, `size grows with rank (${lo.bytes.length} 
 ok(lo.rmse > hi.rmse, `error falls with rank (${lo.rmse.toFixed(2)} > ${hi.rmse.toFixed(2)})`);
 const d = await C.decodeAK(hi.bytes);
 ok(d.info.w === w && d.info.h === h && d.info.ranks[0] === 40, "decode header round trip");
+
+// .akv video: a moving bar over a static gradient, 24 frames of 48x32
+{
+  const vw = 48, vh = 32, T = 24, frames = [];
+  for (let t = 0; t < T; t++) {
+    const f = new Uint8ClampedArray(vw * vh * 4);
+    for (let y = 0; y < vh; y++) for (let x = 0; x < vw; x++) {
+      const o = 4 * (y * vw + x), bar = Math.abs(x - 2 * t) < 3 ? 120 : 0;
+      f[o] = 4 * x + bar; f[o + 1] = 6 * y; f[o + 2] = 90 + bar / 2; f[o + 3] = 255;
+    }
+    frames.push(f);
+  }
+  const lowP = { bits: 5, tbits: 6, chan: [{ r: 2, kMean: 4, kMode: 2 }, { r: 1, kMean: 2, kMode: 1 }, { r: 1, kMean: 2, kMode: 1 }] };
+  const highP = { bits: 7, tbits: 7, chan: [{ r: 20, kMean: 32, kMode: 24 }, { r: 8, kMean: 16, kMode: 12 }, { r: 8, kMean: 16, kMode: 12 }] };
+  const vlo = await C.encodeVideo(frames, vw, vh, 8, lowP), vhi = await C.encodeVideo(frames, vw, vh, 8, highP);
+  const dv = await C.decodeAKV(vhi.bytes);
+  ok(dv.w === vw && dv.h === vh && dv.frames === T && Math.abs(dv.fps - 8) < 1e-9, "akv header round trip");
+  ok(vlo.bytes.length < vhi.bytes.length, `akv size grows with rank (${vlo.bytes.length} < ${vhi.bytes.length})`);
+  ok(vhi.psnr > vlo.psnr + 3, `akv PSNR rises with rank (${vlo.psnr.toFixed(1)} -> ${vhi.psnr.toFixed(1)} dB)`);
+  ok(vhi.psnr > 28, `akv high-rank PSNR ${vhi.psnr.toFixed(1)} dB > 28 (colour, chroma at 1/2 resolution)`);
+  const clamp = await C.encodeVideo(frames, vw, vh, 8, { ...highP, tbits: 8 });
+  ok(Math.abs(clamp.psnr - vhi.psnr) < 1e-9, "akv tbits above 7 is clamped (no byte overflow)");
+  const auto = await C.encodeVideo(frames, vw, vh, 8);
+  ok(auto.ranks[0] <= 8 && auto.bytes.length > 16, `akv auto settings (${auto.bytes.length} B, r=${auto.ranks.join("/")})`);
+}
 process.exit(fail ? 1 : 0);

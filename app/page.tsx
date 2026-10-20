@@ -1,9 +1,5 @@
-import Compressor from "./components/Compressor";
+import Home from "./components/home/Home";
 
 export default function Page() {
-  return (
-    <div className="wrap">
-      <Compressor />
-    </div>
-  );
+  return <Home />;
 }

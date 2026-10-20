@@ -1,4 +1,5 @@
 "use client";
+import { publicLink } from "./platform";
 // Minimal Supabase Storage client over plain fetch/XHR (no SDK).
 // Bucket "media" (public read). Objects are named by share id:
 //   t + 10 chars  -> .ak image (application/octet-stream)
@@ -163,5 +164,5 @@ export function addShare(r: ShareRec) {
   saveShares([r, ...listShares().filter((x) => x.id !== r.id)]);
 }
 export function shareLink(id: string) {
-  return `${window.location.origin}/v/${id}`;
+  return publicLink(id);
 }

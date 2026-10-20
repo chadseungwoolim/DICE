@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import Viewer from "./Viewer";
+import Viewer from "../../components/Viewer";
 
 const ID_RE = /^[twm][A-Za-z0-9]{10}$/;
 

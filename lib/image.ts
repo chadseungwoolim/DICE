@@ -1,9 +1,10 @@
 "use client";
+import { isNative } from "./platform";
 // Decode a user file into RGBA pixels at a bounded working size.
 
 export type Raster = { rgba: Uint8ClampedArray; w: number; h: number };
 
-export async function fileToBitmap(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
+async function decodeBlob(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
   try {
     return await createImageBitmap(file, { imageOrientation: "from-image" } as ImageBitmapOptions);
   } catch {
@@ -16,6 +17,21 @@ export async function fileToBitmap(file: Blob): Promise<ImageBitmap | HTMLImageE
       return img;
     } finally {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+}
+
+/** Decode an image file. If the first attempt fails (seen once with the Android photo picker, whose files are
+ * backed by a content URI), retry from an in-memory copy of the bytes. */
+export async function fileToBitmap(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
+  try {
+    return await decodeBlob(file);
+  } catch (e) {
+    await new Promise((r) => setTimeout(r, 250));
+    try {
+      return await decodeBlob(new Blob([await file.arrayBuffer()], { type: file.type }));
+    } catch {
+      throw e;
     }
   }
 }
@@ -95,7 +111,30 @@ export function rgbaCanvas(rgba: Uint8ClampedArray, w: number, h: number): HTMLC
   return c;
 }
 
-export function saveBlob(blob: Blob, name: string) {
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+/** Browser: normal download. Capacitor app: blob downloads are not handled by the WebView, so write to cache and open the system share sheet. */
+export async function saveBlob(blob: Blob, name: string) {
+  if (isNative()) {
+    try {
+      const [{ Filesystem, Directory }, { Share }] = await Promise.all([import("@capacitor/filesystem"), import("@capacitor/share")]);
+      const data = await blobToBase64(blob);
+      const r = await Filesystem.writeFile({ path: name, data, directory: Directory.Cache });
+      await Share.share({ title: name, url: r.uri, dialogTitle: name });
+    } catch (e) {
+      const m = String((e as Error)?.message || e);
+      if (/cancel/i.test(m)) return; // user closed the share sheet
+      alert(`save failed: ${m}`);
+    }
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

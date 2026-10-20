@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { addShare, newId, shareLink, storageReady, upload } from "@/lib/store";
 import { bytes } from "@/lib/fmt";
+import { isNative, viewHref } from "@/lib/platform";
 
 type Props = {
   blob: Blob | null;
@@ -17,6 +18,7 @@ export default function ShareBox({ blob, kind, orig, name, info, thumb, disabled
   const [state, setState] = useState<"idle" | "up" | "done" | "err">("idle");
   const [prog, setProg] = useState(0);
   const [link, setLink] = useState("");
+  const [sid, setSid] = useState("");
   const [msg, setMsg] = useState("");
   const [ms, setMs] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -37,6 +39,7 @@ export default function ShareBox({ blob, kind, orig, name, info, thumb, disabled
       setMs(performance.now() - t0);
       addShare({ id, size: blob.size, orig, name, created: Date.now(), thumb: thumb(), owned, info });
       setLink(shareLink(id));
+      setSid(id);
       setSentFor(blob);
       setState("done");
     } catch (e) {
@@ -53,6 +56,20 @@ export default function ShareBox({ blob, kind, orig, name, info, thumb, disabled
       setCopied(false);
     }
   }
+
+  // App: hand the link to the system share sheet (messengers, mail ...). Web: Web Share API when available.
+  async function send() {
+    try {
+      if (isNative()) {
+        const { Share } = await import("@capacitor/share");
+        await Share.share({ url: link, dialogTitle: "Share link" });
+      } else if (navigator.share) {
+        await navigator.share({ url: link });
+      }
+    } catch {}
+  }
+  const native = typeof window !== "undefined" && isNative();
+  const canSend = native || (typeof navigator !== "undefined" && !!navigator.share);
 
   return (
     <div className="ctl stack">
@@ -71,7 +88,12 @@ export default function ShareBox({ blob, kind, orig, name, info, thumb, disabled
           <input className="field" readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
           <div className="row" style={{ gap: 8 }}>
             <button className="btn ghost" style={{ flex: 1 }} onClick={copy}>{copied ? "Copied" : "Copy"}</button>
-            <a className="btn ghost" style={{ flex: 1 }} href={link} target="_blank" rel="noreferrer">Open</a>
+            {canSend && <button className="btn ghost" style={{ flex: 1 }} onClick={send}>Send</button>}
+            {native ? (
+              <a className="btn ghost" style={{ flex: 1 }} href={viewHref(sid)}>Open</a>
+            ) : (
+              <a className="btn ghost" style={{ flex: 1 }} href={link} target="_blank" rel="noreferrer">Open</a>
+            )}
           </div>
         </div>
       )}

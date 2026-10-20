@@ -1,0 +1,9 @@
+{
+  "appId": "com.chadseungwoolim.ak",
+  "appName": "Ak",
+  "webDir": "out",
+  "backgroundColor": "#ffffff",
+  "android": {
+    "allowMixedContent": false
+  }
+}

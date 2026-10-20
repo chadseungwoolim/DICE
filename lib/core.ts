@@ -9,7 +9,7 @@ export class Core {
   private pending = new Map<number, Pending>();
 
   constructor() {
-    this.w = new Worker("/core.js?v=1");
+    this.w = new Worker("/core.js?v=2");
     this.w.onmessage = (e: MessageEvent) => {
       const { id, ok, r, error, progress } = e.data;
       const p = this.pending.get(id);
@@ -42,6 +42,29 @@ export class Core {
     this.pending.clear();
   }
 }
+
+let shared: Core | null = null;
+/** Long-lived worker for decoding received messages and encoding outgoing ones. */
+export function getCore(): Core {
+  if (!shared) shared = new Core();
+  return shared;
+}
+
+/** Fixed settings of the sharing flow (measured: 384 px, k = 16, k_c = 4, 5 bit ≈ 4–5 KB, PSNR 20–27 dB). */
+export const IMAGE_AUTO = { size: 384, k: 16, kc: 4, bits: 5, mono: false };
+
+export type VideoResult = {
+  bytes: Uint8Array;
+  rgba: Uint8ClampedArray;
+  w: number;
+  h: number;
+  frames: number;
+  fps: number;
+  ranks: number[];
+  rmse: number;
+  psnr: number;
+};
+export type VideoDecoded = { rgba: Uint8ClampedArray; w: number; h: number; frames: number; fps: number; nch: number; ranks: number[] };
 
 export type EncodeResult = {
   bytes: Uint8Array;

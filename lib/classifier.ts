@@ -1,8 +1,9 @@
 "use client";
+import { assetBase } from "./platform";
 // ResNet-50 (ImageNet, Keras weights converted to TF.js, float16 storage).
 // Loaded on demand only in experiment E3 auto mode.
 
-export const MODEL_URL = "/models/resnet50-f16/model.json";
+export const MODEL_URL = () => `${assetBase()}/models/resnet50-f16/model.json`;
 export const MODEL_MB = 51.4;
 export const CAT_CLASSES = [281, 282, 283, 284, 285]; // tabby, tiger cat, Persian, Siamese, Egyptian cat
 
@@ -28,8 +29,8 @@ export async function loadClassifier(onProgress?: (f: number) => void): Promise<
   await tf.ready();
   backend = tf.getBackend();
   const [m, l] = await Promise.all([
-    tfl.loadLayersModel(MODEL_URL, { onProgress }),
-    fetch("/models/resnet50-f16/labels.json").then((r) => r.json()),
+    tfl.loadLayersModel(MODEL_URL(), { onProgress }),
+    fetch(`${assetBase()}/models/resnet50-f16/labels.json`).then((r) => r.json()),
   ]);
   model = m;
   labels = l;
