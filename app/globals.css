@@ -162,7 +162,7 @@ table.t td { text-align: right; padding: 5px 10px; border-bottom: 1px solid var(
 table.t th:first-child, table.t td:first-child { text-align: left; }
 table.t tr[data-hl="1"] td { background: var(--faint); }
 
-.grid-exp { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); margin: 24px 0; }
+.grid-exp { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); margin: 24px 0; }
 .grid-exp > a { padding: 22px 20px 26px; min-height: 220px; display: flex; flex-direction: column; justify-content: space-between; }
 .grid-exp > a + a { border-left: 1px solid var(--line); }
 .grid-exp > a:hover { background: var(--faint); }
@@ -289,11 +289,12 @@ table.t tr[data-hl="1"] td { background: var(--faint); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .chip-btn { border: 1px solid var(--line); background: transparent; padding: 6px 12px; font-family: var(--mono); font-size: 13px; cursor: pointer; }
 .chip-btn[data-on="1"] { border-color: var(--fg); background: var(--fg); color: var(--bg); }
-.viewer-stage { background: var(--faint); flex: 1; min-height: 50vh; display: flex; align-items: center; justify-content: center; }
+.viewer-stage { background: var(--faint); flex: 1; min-height: 50vh; display: flex; align-items: center; justify-content: center; position: relative; }
+.viewer-tag { position: absolute; left: 10px; top: 10px; background: var(--fg); color: var(--bg); font-size: 11px; padding: 3px 8px; letter-spacing: 0.04em; }
 .viewer-canvas { width: 100%; max-height: 70vh; object-fit: contain; }
 .viewer-info { padding: 10px 16px; font-size: 11px; color: var(--mid); border-top: 1px solid var(--line); }
 .viewer-actions { display: flex; gap: 8px; padding: 12px 16px 18px; align-items: center; flex-wrap: wrap; }
-.viewer-actions .btn { flex: 1; height: 42px; }
+.viewer-actions .btn { flex: 1 1 28%; height: 42px; }
 .settings section { display: flex; flex-direction: column; gap: 8px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .settings section:last-child { border-bottom: 0; }
 .my-number { font-size: 30px; font-weight: 300; letter-spacing: 0.04em; }

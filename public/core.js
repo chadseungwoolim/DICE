@@ -987,6 +987,264 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Restoration: pick the most image-like matrix among all originals    */
+  /* that the stored rank-k factors allow.                               */
+  /*                                                                     */
+  /* Every original that truncates to Aₖ is Aₖ + R with UₖᵀR = 0 and     */
+  /* RVₖ = 0, an affine subspace S. Pixel values must lie in a box B.    */
+  /* Both sets are convex. We minimise total variation over S ∩ B by     */
+  /* projected gradient steps:                                           */
+  /*   X ← P_B( P_S( X − η ∇TV_ε(X) ) )                                  */
+  /*   P_S(X) = Aₖ + (I − UₖUₖᵀ)(X − Aₖ)(I − VₖVₖᵀ)                       */
+  /* Uₖ, Vₖ are orthonormal bases of the stored (quantised) factors, so  */
+  /* the decoded Aₖ lies exactly in S.                                   */
+  /* ------------------------------------------------------------------ */
+  function orthoBasis(vecs, len) {
+    var out = [], i, j, t;
+    for (i = 0; i < vecs.length; i++) {
+      var v = Float64Array.from(vecs[i]);
+      for (var pass = 0; pass < 2; pass++) {          // Gram–Schmidt twice for stability
+        for (j = 0; j < out.length; j++) {
+          var q = out[j], d = 0;
+          for (t = 0; t < len; t++) d += q[t] * v[t];
+          for (t = 0; t < len; t++) v[t] -= d * q[t];
+        }
+      }
+      var nrm = 0;
+      for (t = 0; t < len; t++) nrm += v[t] * v[t];
+      nrm = Math.sqrt(nrm);
+      if (nrm < 1e-9) continue;
+      for (t = 0; t < len; t++) v[t] /= nrm;
+      out.push(v);
+    }
+    return out;
+  }
+
+  /* qerr: expected ‖Aₖ − Âₖ‖F caused by quantising every stored value with step s (error variance s²/12):
+     Σᵢ ( s_aᵢ²/12 · rows · ‖bᵢ‖² + s_bᵢ²/12 · cols · ‖aᵢ‖² ). Steps are recovered as max|value| / Q. */
+  function makePreimage(ch, bits) {
+    var base = Float64Array.from(lowRank(ch)), Q = (1 << ((bits || 5) - 1)) - 1, q2 = 0;
+    for (var i = 0; i < ch.k; i++) {
+      var a = ch.A[i], b = ch.B[i], na = 0, nb = 0, ma = 0, mb = 0, t;
+      for (t = 0; t < a.length; t++) { na += a[t] * a[t]; if (Math.abs(a[t]) > ma) ma = Math.abs(a[t]); }
+      for (t = 0; t < b.length; t++) { nb += b[t] * b[t]; if (Math.abs(b[t]) > mb) mb = Math.abs(b[t]); }
+      var sa = ma / Q, sb = mb / Q;
+      q2 += (sa * sa / 12) * a.length * nb + (sb * sb / 12) * b.length * na;
+    }
+    return { rows: ch.rows, cols: ch.cols, base: base, U: orthoBasis(ch.A, ch.rows), V: orthoBasis(ch.B, ch.cols), qerr: Math.sqrt(q2) };
+  }
+
+  /* Relaxed preimage for quantised factors: { X : ‖Uₖᵀ(X − Âₖ)‖F ≤ δ } ∩ { X : ‖(X − Âₖ)Vₖ‖F ≤ δ }.
+     Both are convex; δ = 0 gives back S. Projection onto one of them shrinks the in-span part. */
+  function projectSide(X, P, delta, left) {
+    var rows = P.rows, cols = P.cols, N = rows * cols, D = new Float64Array(N), i, r, c, j, e2 = 0, comps = [];
+    for (i = 0; i < N; i++) D[i] = X[i] - P.base[i];
+    var B = left ? P.U : P.V;
+    for (j = 0; j < B.length; j++) {
+      var b = B[j], w;
+      if (left) {
+        w = new Float64Array(cols);
+        for (r = 0; r < rows; r++) { var br = b[r], off = r * cols; if (br === 0) continue; for (c = 0; c < cols; c++) w[c] += br * D[off + c]; }
+      } else {
+        w = new Float64Array(rows);
+        for (r = 0; r < rows; r++) { var off2 = r * cols, z = 0; for (c = 0; c < cols; c++) z += D[off2 + c] * b[c]; w[r] = z; }
+      }
+      for (i = 0; i < w.length; i++) e2 += w[i] * w[i];
+      comps.push(w);
+    }
+    var e = Math.sqrt(e2);
+    if (e <= delta) return;
+    var f = 1 - delta / e;
+    for (j = 0; j < B.length; j++) {
+      var bb = B[j], ww = comps[j];
+      if (left) { for (r = 0; r < rows; r++) { var g = bb[r] * f, o = r * cols; if (g === 0) continue; for (c = 0; c < cols; c++) X[o + c] -= g * ww[c]; } }
+      else { for (r = 0; r < rows; r++) { var h = ww[r] * f, o2 = r * cols; if (h === 0) continue; for (c = 0; c < cols; c++) X[o2 + c] -= h * bb[c]; } }
+    }
+  }
+
+  // in place: X ← P_S(X)
+  function projectPreimage(X, P) {
+    var rows = P.rows, cols = P.cols, N = rows * cols, D = new Float64Array(N), i, r, c, j;
+    for (i = 0; i < N; i++) D[i] = X[i] - P.base[i];
+    var w = new Float64Array(cols);
+    for (j = 0; j < P.U.length; j++) {                 // D ← (I − uuᵀ) D for each orthonormal u
+      var u = P.U[j];
+      w.fill(0);
+      for (r = 0; r < rows; r++) { var ur = u[r], off = r * cols; if (ur === 0) continue; for (c = 0; c < cols; c++) w[c] += ur * D[off + c]; }
+      for (r = 0; r < rows; r++) { var ur2 = u[r], off2 = r * cols; if (ur2 === 0) continue; for (c = 0; c < cols; c++) D[off2 + c] -= ur2 * w[c]; }
+    }
+    for (j = 0; j < P.V.length; j++) {                 // D ← D (I − vvᵀ) for each orthonormal v
+      var v = P.V[j];
+      for (r = 0; r < rows; r++) {
+        var off3 = r * cols, z = 0;
+        for (c = 0; c < cols; c++) z += D[off3 + c] * v[c];
+        if (z !== 0) for (c = 0; c < cols; c++) D[off3 + c] -= z * v[c];
+      }
+    }
+    for (i = 0; i < N; i++) X[i] = P.base[i] + D[i];
+  }
+
+  // smoothed isotropic total variation and its gradient (forward differences, Neumann boundary)
+  function tvGrad(X, rows, cols, eps, G) {
+    var N = rows * cols, px = new Float64Array(N), py = new Float64Array(N), tv = 0, r, c, i;
+    for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+      i = r * cols + c;
+      var dx = c + 1 < cols ? X[i + 1] - X[i] : 0, dy = r + 1 < rows ? X[i + cols] - X[i] : 0;
+      var n = Math.sqrt(dx * dx + dy * dy + eps * eps);
+      tv += n - eps;
+      px[i] = dx / n; py[i] = dy / n;
+    }
+    for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) {
+      i = r * cols + c;
+      var div = px[i] - (c > 0 ? px[i - 1] : 0) + py[i] - (r > 0 ? py[i - cols] : 0);
+      G[i] = -div;
+    }
+    return tv;
+  }
+  function tvValue(X, rows, cols) {
+    var tv = 0;
+    for (var r = 0; r < rows; r++) for (var c = 0; c < cols; c++) {
+      var i = r * cols + c, dx = c + 1 < cols ? X[i + 1] - X[i] : 0, dy = r + 1 < rows ? X[i + cols] - X[i] : 0;
+      tv += Math.sqrt(dx * dx + dy * dy);
+    }
+    return tv;
+  }
+
+  /* Restore one channel. opts: { iters, eta, eps, lo, hi, delta, every, onStep(t, X) } */
+  function restoreChannel(P, opts) {
+    var rows = P.rows, cols = P.cols, N = rows * cols, X = Float64Array.from(P.base), G = new Float64Array(N);
+    var iters = opts.iters, eta = opts.eta, eps = opts.eps, lo = opts.lo, hi = opts.hi, i;
+    for (i = 0; i < N; i++) X[i] = X[i] < lo ? lo : X[i] > hi ? hi : X[i];
+    for (var t = 1; t <= iters; t++) {
+      tvGrad(X, rows, cols, eps, G);
+      for (i = 0; i < N; i++) X[i] -= eta * G[i];
+      if (opts.delta > 0) { projectSide(X, P, opts.delta, true); projectSide(X, P, opts.delta, false); }
+      else projectPreimage(X, P);
+      for (i = 0; i < N; i++) X[i] = X[i] < lo ? lo : X[i] > hi ? hi : X[i];
+      if (opts.onStep && (t % opts.every === 0 || t === iters)) opts.onStep(t, X);
+    }
+    return X;
+  }
+
+  // distance of X from the preimage set S, relative to ‖X‖ (should be ~0 up to the box clipping)
+  function preimageResidual(X, P) {
+    var Y = Float64Array.from(X), N = X.length, a = 0, b = 0;
+    projectPreimage(Y, P);
+    for (var i = 0; i < N; i++) { var d = X[i] - Y[i]; a += d * d; b += X[i] * X[i]; }
+    return Math.sqrt(a / b);
+  }
+
+  var RESTORE_DEFAULT = { iters: 120, eta: 1, eps: 1, tau: 0.5 }; // δ = τ · qerr (τ measured on test images)
+
+  /* Restore a whole .ak image (all channels). Returns RGBA like decodeAK. */
+  async function restoreAK(bytes, opts, progress) {
+    opts = Object.assign({}, RESTORE_DEFAULT, opts || {});
+    var p = await parseAK(bytes), w = p.w, h = p.h, N = w * h, t0 = now();
+    var outs = [], tv0 = 0, tv1 = 0;
+    for (var c = 0; c < p.nch; c++) {
+      var P = makePreimage(p.channels[c], p.bits);
+      var luma = c === 0;
+      if (luma) tv0 = tvValue(P.base, P.rows, P.cols);
+      var X = restoreChannel(P, {
+        iters: opts.iters, eta: opts.eta, eps: opts.eps, lo: luma ? 0 : -128, hi: luma ? 255 : 127, every: 10, delta: opts.tau * P.qerr,
+        onStep: progress ? function (t) { progress({ channel: c, t: t, iters: opts.iters }); } : null
+      });
+      if (luma) tv1 = tvValue(X, P.rows, P.cols);
+      outs.push({ X: X, P: P });
+    }
+    var rgba = new Uint8ClampedArray(N * 4), i, o, Y = outs[0].X;
+    if (p.nch === 1) {
+      for (i = 0, o = 0; i < N; i++, o += 4) { rgba[o] = Y[i]; rgba[o + 1] = Y[i]; rgba[o + 2] = Y[i]; rgba[o + 3] = 255; }
+    } else {
+      var cp = outs[1].P;
+      var Cb = upsample2(outs[1].X, cp.cols, cp.rows, w, h), Cr = upsample2(outs[2].X, cp.cols, cp.rows, w, h);
+      for (i = 0, o = 0; i < N; i++, o += 4) {
+        rgba[o] = Y[i] + 1.402 * Cr[i];
+        rgba[o + 1] = Y[i] - 0.344136 * Cb[i] - 0.714136 * Cr[i];
+        rgba[o + 2] = Y[i] + 1.772 * Cb[i];
+        rgba[o + 3] = 255;
+      }
+    }
+    return {
+      rgba: rgba, w: w, h: h, iters: opts.iters, ms: now() - t0, tv0: tv0, tv1: tv1,
+      residual: preimageResidual(Y, outs[0].P), qerr: outs[0].P.qerr
+    };
+  }
+
+  /* Matrix completion baseline (soft-impute / singular value thresholding):
+     keep N pixels chosen by a seeded RNG (positions cost nothing), fill the rest by
+     X ← D_λ( P_Ω(A) + P_Ω⊥(X) ), D_λ = shrink every singular value by λ.               */
+  function completeMatrix(A, m, n, N, opts, progress) {
+    opts = opts || {};
+    var iters = opts.iters || 60, rng = mulberry32((opts.seed || 1) >>> 0), MN = m * n, i, t;
+    var idx = new Uint32Array(MN);
+    for (i = 0; i < MN; i++) idx[i] = i;
+    for (i = MN - 1; i > 0; i--) { var j = Math.floor(rng() * (i + 1)), s = idx[i]; idx[i] = idx[j]; idx[j] = s; }
+    var mask = new Uint8Array(MN), mean = 0, nrm = 0;
+    N = Math.min(N, MN);
+    for (i = 0; i < N; i++) { mask[idx[i]] = 1; mean += A[idx[i]]; nrm += A[idx[i]] * A[idx[i]]; }
+    mean /= N;
+    var lam = (opts.lam || 0.01) * Math.sqrt(nrm);
+    var X = new Float64Array(MN).fill(mean), Y = new Float64Array(MN);
+    for (t = 1; t <= iters; t++) {
+      for (i = 0; i < MN; i++) Y[i] = mask[i] ? A[i] : X[i];
+      var svd = svdGram(Y, m, n);
+      X.fill(0);
+      for (var q = 0; q < svd.r; q++) {
+        var sv = svd.s[q] - lam;
+        if (!(sv > 0)) break;
+        var u = svd.U[q], v = svd.V[q];
+        for (var r = 0; r < m; r++) { var a = sv * u[r], off = r * n; for (var c = 0; c < n; c++) X[off + c] += a * v[c]; }
+      }
+      if (progress && (t % 5 === 0 || t === iters)) progress({ stage: 'completion', t: t, iters: iters });
+    }
+    return { X: X, samples: N };
+  }
+
+  function psnrOf(X, A) {
+    var se = 0, N = A.length;
+    for (var i = 0; i < N; i++) { var v = X[i] < 0 ? 0 : X[i] > 255 ? 255 : X[i], d = v - A[i]; se += d * d; }
+    var rmse = Math.sqrt(se / N);
+    return rmse > 0 ? 20 * Math.log10(255 / rmse) : Infinity;
+  }
+
+  /* Experiment E4 on one grey image: encode at each k exactly like the codec (mono .ak),
+     restore, and compare with matrix completion at the same number of stored values.   */
+  async function restorationExperiment(p, progress) {
+    var A = p.gray, m = p.m, n = p.n, bits = p.bits || 5, iters = p.iters || RESTORE_DEFAULT.iters;
+    var svd = svdGram(A, m, n), rows = [];
+    var detail = null;
+    for (var q = 0; q < p.ks.length; q++) {
+      var k = Math.min(p.ks[q], svd.r);
+      var bytes = await encodeAK({ w: n, h: m, bits: bits, channels: [{ svd: svd, k: k, rows: m, cols: n }] });
+      var parsed = await parseAK(bytes), P = makePreimage(parsed.channels[0], bits);
+      var curveExact = [], curve = [], tau = p.tau == null ? RESTORE_DEFAULT.tau : p.tau;
+      var X0 = restoreChannel(P, {
+        iters: iters, eta: RESTORE_DEFAULT.eta, eps: 1, lo: 0, hi: 255, every: 10, delta: 0,
+        onStep: function (t, Xt) { curveExact.push([t, psnrOf(Xt, A)]); }
+      });
+      var X = restoreChannel(P, {
+        iters: iters, eta: RESTORE_DEFAULT.eta, eps: 1, lo: 0, hi: 255, every: 10, delta: tau * P.qerr,
+        onStep: function (t, Xt) { curve.push([t, psnrOf(Xt, A)]); }
+      });
+      var row = {
+        k: k, bytes: bytes.length, stored: k * (m + n + 1), psnrAk: psnrOf(P.base, A),
+        psnrExact: psnrOf(X0, A), psnrRestored: psnrOf(X, A), curveExact: curveExact, curve: curve,
+        residualExact: preimageResidual(X0, P), qerr: P.qerr, delta: tau * P.qerr
+      };
+      if (p.completion) {
+        var comp = completeMatrix(A, m, n, row.stored, { iters: p.completionIters || 60, seed: 7 }, null);
+        row.psnrCompletion = psnrOf(comp.X, A);
+        if (k === p.detailK) { detail = detail || {}; detail.completion = comp.X; }
+      }
+      if (k === p.detailK) { detail = detail || {}; detail.ak = P.base; detail.restored = X; }
+      rows.push(row);
+      progress && progress({ stage: 'k', done: q + 1, total: p.ks.length });
+    }
+    return { rows: rows, detail: detail, m: m, n: n };
+  }
+
+  /* ------------------------------------------------------------------ */
   /* worker protocol                                                     */
   /* ------------------------------------------------------------------ */
   var handlers = {
@@ -1052,6 +1310,23 @@
     videoDecode: async function (p) {
       var d = await decodeAKV(new Uint8Array(p.bytes));
       return { res: d, transfer: [d.rgba.buffer] };
+    },
+    restore: async function (p, progress) {
+      var r = await restoreAK(new Uint8Array(p.bytes), p.opts, progress);
+      return { res: r, transfer: [r.rgba.buffer] };
+    },
+    restorationExperiment: async function (p, progress) {
+      var r = await restorationExperiment({
+        gray: new Float64Array(p.gray), m: p.m, n: p.n, ks: p.ks, bits: p.bits, iters: p.iters, tau: p.tau,
+        completion: p.completion, completionIters: p.completionIters, detailK: p.detailK
+      }, progress);
+      var tr = [];
+      if (r.detail) {
+        ['ak', 'restored', 'completion'].forEach(function (key) {
+          if (r.detail[key]) { r.detail[key] = grayToRGBA(r.detail[key], r.m * r.n, 'clamp'); tr.push(r.detail[key].buffer); }
+        });
+      }
+      return { res: r, transfer: tr };
     }
   };
 
@@ -1059,7 +1334,9 @@
     symEig: symEig, svdGram: svdGram, svdJacobi: svdJacobi, encodeAK: encodeAK, decodeAK: decodeAK, parseAK: parseAK,
     prepareImage: prepareImage, encodeState: encodeState, eckartYoung: eckartYoung, e2Prepare: e2Prepare, e2Run: e2Run,
     toF16: toF16, fromF16: fromF16, randomOrthonormal: randomOrthonormal, mulberry32: mulberry32, handlers: handlers,
-    encodeAKV: encodeAKV, decodeAKV: decodeAKV, encodeVideo: encodeVideo, VIDEO_AUTO: VIDEO_AUTO
+    encodeAKV: encodeAKV, decodeAKV: decodeAKV, encodeVideo: encodeVideo, VIDEO_AUTO: VIDEO_AUTO,
+    restoreAK: restoreAK, makePreimage: makePreimage, projectPreimage: projectPreimage, projectSide: projectSide, restoreChannel: restoreChannel, RESTORE_DEFAULT: RESTORE_DEFAULT,
+    completeMatrix: completeMatrix, restorationExperiment: restorationExperiment, psnrOf: psnrOf, preimageResidual: preimageResidual
   };
 
   if (typeof module !== 'undefined' && module.exports) {

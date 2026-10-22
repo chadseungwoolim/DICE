@@ -25,6 +25,13 @@ const EXPS = [
     eq: "bytes(k)  →  P(judged cat)",
     d: "고양이 이미지를 여러 rank로 압축하고 사람 판정 또는 분류 모델 판정으로 형체가 무너지는 용량을 측정합니다.",
   },
+  {
+    n: "E4",
+    href: "/experiment/restoration",
+    title: "Restoration",
+    eq: "min TV(X)  s.t.  X ∈ S ∩ B",
+    d: "압축본과 맞는 원본 후보 집합(아핀 부분공간)과 픽셀 범위(볼록집합) 안에서 가장 사진다운 해를 찾아 복원하고, 같은 저장량의 행렬 완성과 비교합니다.",
+  },
 ];
 
 export default function Page() {
@@ -57,6 +64,8 @@ export default function Page() {
           <dd>Gram matrix + Householder tridiagonalisation + implicit QL, float64</dd>
           <dt>.ak format</dt>
           <dd>√σᵢuᵢ, √σᵢvᵢ quantised per vector (3 to 7 bits), zigzag delta, deflate-raw; Y full res, CbCr half res</dd>
+          <dt>restoration (E4)</dt>
+          <dd>projected gradient on smoothed TV, projection onto the preimage set S (or its δ-relaxation for quantised factors) and the 0..255 box</dd>
           <dt>classifier (E3)</dt>
           <dd>ResNet-50 ImageNet (Keras weights, float16), classes 281 to 285 = domestic cat</dd>
         </dl>

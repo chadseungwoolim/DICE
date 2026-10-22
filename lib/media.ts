@@ -60,6 +60,19 @@ export async function decodeBytes(kind: "image" | "video", bytes: Uint8Array): P
   return { kind: "video", rgba: v.rgba, w: v.w, h: v.h, frames: v.frames, fps: v.fps };
 }
 
+/** Restoration of a received .ak image (see restoreAK in /core.js): the most image-like picture consistent with
+ * the stored factors. An estimate, not the original. */
+export async function restoreBytes(bytes: Uint8Array, onProgress?: (f: number) => void): Promise<Pixels & { ms: number }> {
+  const buf = bytes.slice().buffer as ArrayBuffer;
+  const r = await getCore().call<{ rgba: Uint8ClampedArray; w: number; h: number; ms: number }>(
+    "restore",
+    { bytes: buf },
+    [buf],
+    (p: { channel: number; t: number; iters: number }) => onProgress?.(Math.min(1, (p.channel + p.t / p.iters) / 3))
+  );
+  return { kind: "image", rgba: r.rgba, w: r.w, h: r.h, ms: r.ms };
+}
+
 /** One frame of a decoded video (or the image) as ImageData. */
 export function frameData(p: Pixels, i = 0): ImageData {
   const n = p.w * p.h * 4;

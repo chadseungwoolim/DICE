@@ -57,4 +57,30 @@ ok(d.info.w === w && d.info.h === h && d.info.ranks[0] === 40, "decode header ro
   const auto = await C.encodeVideo(frames, vw, vh, 8);
   ok(auto.ranks[0] <= 8 && auto.bytes.length > 16, `akv auto settings (${auto.bytes.length} B, r=${auto.ranks.join("/")})`);
 }
+
+// restoration: preimage projection, restoration stays consistent with the stored factors, PSNR does not drop
+{
+  const rw = 64, rh = 48, img = new Float64Array(rw * rh);
+  for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+    let v = 40;
+    if ((x - 20) ** 2 + (y - 24) ** 2 < 140) v = 210;          // disc
+    if (x > 38 && x < 58 && y > 8 && y < 40) v = 120;           // rectangle
+    img[y * rw + x] = v;
+  }
+  const svdI = C.svdGram(img, rh, rw);
+  const akb = await C.encodeAK({ w: rw, h: rh, bits: 5, channels: [{ svd: svdI, k: 6, rows: rh, cols: rw }] });
+  const P = C.makePreimage((await C.parseAK(akb)).channels[0], 5);
+  const X = Float64Array.from(img); C.projectPreimage(X, P);
+  const Y = Float64Array.from(X); C.projectPreimage(Y, P);
+  let d = 0, b0 = 0; for (let i = 0; i < X.length; i++) { d = Math.max(d, Math.abs(X[i] - Y[i])); }
+  const Z = Float64Array.from(P.base); C.projectPreimage(Z, P); for (let i = 0; i < Z.length; i++) b0 = Math.max(b0, Math.abs(Z[i] - P.base[i]));
+  ok(d < 1e-8 && b0 < 1e-8, `preimage projection is idempotent and fixes A_k (${d.toExponential(1)}, ${b0.toExponential(1)})`);
+  const ex = C.restoreChannel(P, { iters: 150, eta: 1, eps: 1, lo: 0, hi: 255, delta: 0, every: 1e9 });
+  ok(C.preimageResidual(ex, P) < 1e-2, `exact restoration stays in the preimage set (residual ${C.preimageResidual(ex, P).toExponential(1)})`);
+  const rl = C.restoreChannel(P, { iters: 150, eta: 1, eps: 1, lo: 0, hi: 255, delta: 0.5 * P.qerr, every: 1e9 });
+  const p0 = C.psnrOf(P.base, img), p1 = C.psnrOf(ex, img), p2 = C.psnrOf(rl, img);
+  ok(p1 > p0 && p2 > p0, `restoration raises PSNR on a piecewise-constant image (${p0.toFixed(2)} -> exact ${p1.toFixed(2)}, relaxed ${p2.toFixed(2)} dB)`);
+  const comp = C.completeMatrix(img, rh, rw, 6 * (rh + rw + 1), { iters: 30 });
+  ok(isFinite(C.psnrOf(comp.X, img)) && comp.samples === 6 * (rh + rw + 1), `matrix completion baseline runs (${C.psnrOf(comp.X, img).toFixed(2)} dB)`);
+}
 process.exit(fail ? 1 : 0);

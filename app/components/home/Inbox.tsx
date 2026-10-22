@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { block, deleteMessage, errText, fetchFile, listMessages, markRead, type Msg } from "@/lib/account";
-import { decodeBytes, type Pixels } from "@/lib/media";
+import { decodeBytes, restoreBytes, type Pixels } from "@/lib/media";
 import { bytes as fmtBytes } from "@/lib/fmt";
 import { saveBlob } from "@/lib/image";
 import PixelView from "./PixelView";
@@ -17,6 +17,8 @@ function pixelsOf(m: Msg): Promise<Pixels> {
   }
   return p;
 }
+
+const restoredCache = new Map<string, Pixels>();
 
 function when(iso: string): string {
   const d = new Date(iso), now = new Date();
@@ -66,7 +68,30 @@ function Viewer({ m, me, onClose, onReply, onChanged }: { m: Msg; me: string; on
   const [err, setErr] = useState("");
   const [confirm, setConfirm] = useState<"" | "delete" | "block">("");
   const [busy, setBusy] = useState(false);
+  const [restored, setRestored] = useState<Pixels | null>(restoredCache.get(m.path) || null);
+  const [showRestored, setShowRestored] = useState(false);
+  const [rprog, setRprog] = useState<number | null>(null);
   useBackClose(onClose);
+
+  async function sharpen() {
+    if (restored) {
+      setShowRestored((x) => !x);
+      return;
+    }
+    setRprog(0);
+    setErr("");
+    try {
+      const r = await restoreBytes(await fetchFile(m.path), (f) => setRprog(f));
+      restoredCache.set(m.path, r);
+      setRestored(r);
+      setShowRestored(true);
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setRprog(null);
+    }
+  }
+  const shown = showRestored && restored ? restored : p;
   useEffect(() => {
     let dead = false;
     pixelsOf(m).then((x) => !dead && setP(x)).catch((e) => !dead && setErr(errText(e)));
@@ -75,12 +100,12 @@ function Viewer({ m, me, onClose, onReply, onChanged }: { m: Msg; me: string; on
   }, [m, onChanged]);
 
   async function save() {
-    if (!p || p.kind !== "image") return;
+    if (!shown || shown.kind !== "image") return;
     const c = document.createElement("canvas");
-    c.width = p.w;
-    c.height = p.h;
-    c.getContext("2d")!.putImageData(new ImageData(p.rgba.slice(), p.w, p.h), 0, 0);
-    c.toBlob((b) => b && saveBlob(b, `ak-${m.other}-${m.id.slice(0, 8)}.png`), "image/png");
+    c.width = shown.w;
+    c.height = shown.h;
+    c.getContext("2d")!.putImageData(new ImageData(shown.rgba.slice(), shown.w, shown.h), 0, 0);
+    c.toBlob((b) => b && saveBlob(b, `ak-${m.other}-${m.id.slice(0, 8)}${showRestored ? "-restored" : ""}.png`), "image/png");
   }
   async function act() {
     setBusy(true);
@@ -109,7 +134,13 @@ function Viewer({ m, me, onClose, onReply, onChanged }: { m: Msg; me: string; on
         </button>
       </div>
       <div className="viewer-stage">
-        {p ? <PixelView p={p} className="viewer-canvas" /> : <span className="label">{err || "여는 중"}</span>}
+        {shown ? <PixelView p={shown} className="viewer-canvas" /> : <span className="label">{err || "여는 중"}</span>}
+        {showRestored && restored && <span className="viewer-tag">추정 복원 (원본 아님)</span>}
+        {rprog !== null && (
+          <span className="viewer-tag">
+            복원 중 {Math.round(rprog * 100)}%
+          </span>
+        )}
       </div>
       <div className="viewer-info num">
         {fmtBytes(m.bytes)}
@@ -135,6 +166,11 @@ function Viewer({ m, me, onClose, onReply, onChanged }: { m: Msg; me: string; on
           <button className="btn solid" onClick={() => onReply(m.other)}>
             {m.box === "in" && !self ? "답장" : "또 보내기"}
           </button>
+          {m.kind === "image" && (
+            <button className="btn ghost" onClick={sharpen} disabled={!p || rprog !== null}>
+              {rprog !== null ? "복원 중" : showRestored ? "압축본 보기" : "선명하게"}
+            </button>
+          )}
           {m.kind === "image" && (
             <button className="btn ghost" onClick={save} disabled={!p}>
               저장
