@@ -162,7 +162,7 @@ table.t td { text-align: right; padding: 5px 10px; border-bottom: 1px solid var(
 table.t th:first-child, table.t td:first-child { text-align: left; }
 table.t tr[data-hl="1"] td { background: var(--faint); }
 
-.grid-exp { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); margin: 24px 0; }
+.grid-exp { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); margin: 24px 0; }
 .grid-exp > a { padding: 22px 20px 26px; min-height: 220px; display: flex; flex-direction: column; justify-content: space-between; }
 .grid-exp > a + a { border-left: 1px solid var(--line); }
 .grid-exp > a:hover { background: var(--faint); }

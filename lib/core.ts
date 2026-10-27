@@ -9,7 +9,7 @@ export class Core {
   private pending = new Map<number, Pending>();
 
   constructor() {
-    this.w = new Worker("/core.js?v=3");
+    this.w = new Worker("/core.js?v=4");
     this.w.onmessage = (e: MessageEvent) => {
       const { id, ok, r, error, progress } = e.data;
       const p = this.pending.get(id);

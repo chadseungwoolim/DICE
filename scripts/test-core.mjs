@@ -83,4 +83,19 @@ ok(d.info.w === w && d.info.h === h && d.info.ranks[0] === 40, "decode header ro
   const comp = C.completeMatrix(img, rh, rw, 6 * (rh + rw + 1), { iters: 30 });
   ok(isFinite(C.psnrOf(comp.X, img)) && comp.samples === 6 * (rh + rw + 1), `matrix completion baseline runs (${C.psnrOf(comp.X, img).toFixed(2)} dB)`);
 }
+// E5 performance experiment: sizes grow and RMSE falls with k, restoration fields only where asked
+{
+  const pw = 64, ph = 48, px = new Uint8ClampedArray(pw * ph * 4);
+  for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
+    const o = 4 * (y * pw + x), disc = (x - 24) ** 2 + (y - 24) ** 2 < 200;
+    px[o] = disc ? 220 : 30 + x; px[o + 1] = disc ? 60 : 2 * y; px[o + 2] = 120; px[o + 3] = 255;
+  }
+  const pe = await C.performanceExperiment({ rgba: px, w: pw, h: ph, ks: [2, 8, 24], restoreKs: [8], iters: 40 });
+  const r = pe.rows;
+  ok(r[0].bytes < r[1].bytes && r[1].bytes < r[2].bytes, `E5 size grows with k (${r.map((x) => x.bytes).join(" < ")})`);
+  ok(r[0].rmse > r[1].rmse && r[1].rmse > r[2].rmse, `E5 RMSE falls with k (${r.map((x) => x.rmse.toFixed(1)).join(" > ")})`);
+  ok(r[1].rmseRestored != null && r[0].rmseRestored == null, `E5 restores only the requested k (RMSE ${r[1].rmse.toFixed(2)} -> ${r[1].rmseRestored.toFixed(2)})`);
+  const enc = await C.encodeState(C.prepareImage(px, pw, ph, true), 8, 2, 5, false);
+  ok(Math.abs(enc.rmse - r[1].rmse) < 1e-9, "E5 RMSE equals the codec's own RMSE");
+}
 process.exit(fail ? 1 : 0);

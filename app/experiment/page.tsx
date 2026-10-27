@@ -32,6 +32,13 @@ const EXPS = [
     eq: "min TV(X)  s.t.  X ∈ S ∩ B",
     d: "압축본과 맞는 원본 후보 집합(아핀 부분공간)과 픽셀 범위(볼록집합) 안에서 가장 사진다운 해를 찾아 복원하고, 같은 저장량의 행렬 완성과 비교합니다.",
   },
+  {
+    n: "E5",
+    href: "/experiment/performance",
+    title: "Performance",
+    eq: "bytes(k),  RMSE(k),  RMSE after restore",
+    d: "여러 장의 사진을 실제 전송과 똑같이 압축해 k마다 파일 크기와 RMSE를 재고, 복원 전후 RMSE를 비교합니다.",
+  },
 ];
 
 export default function Page() {
@@ -66,6 +73,8 @@ export default function Page() {
           <dd>√σᵢuᵢ, √σᵢvᵢ quantised per vector (3 to 7 bits), zigzag delta, deflate-raw; Y full res, CbCr half res</dd>
           <dt>restoration (E4)</dt>
           <dd>projected gradient on smoothed TV, projection onto the preimage set S (or its δ-relaxation for quantised factors) and the 0..255 box</dd>
+          <dt>performance (E5)</dt>
+          <dd>real sending path per k (384 px, 5 bit, k_c = k/4), RGB RMSE against the 384 px original, restoration with the default settings</dd>
           <dt>classifier (E3)</dt>
           <dd>ResNet-50 ImageNet (Keras weights, float16), classes 281 to 285 = domestic cat</dd>
         </dl>

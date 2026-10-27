@@ -1247,6 +1247,43 @@
   /* ------------------------------------------------------------------ */
   /* worker protocol                                                     */
   /* ------------------------------------------------------------------ */
+  /* Experiment E5: performance of the real sending path on one colour image.
+     For every k: encode exactly like a sent photo (.ak, 5 bits, chroma rank kc = round(k/4)),
+     measure the file size and the RMSE against the 384-pixel original, and for the chosen k
+     also restore and measure the RMSE again. Times are wall-clock milliseconds.            */
+  function rmseRGBA(a, b) {
+    var se = 0, n = 0;
+    for (var i = 0; i < a.length; i += 4) {
+      var d0 = a[i] - b[i], d1 = a[i + 1] - b[i + 1], d2 = a[i + 2] - b[i + 2];
+      se += d0 * d0 + d1 * d1 + d2 * d2; n += 3;
+    }
+    return Math.sqrt(se / n);
+  }
+  function kcFor(k) { return Math.max(1, Math.round(k / 4)); }
+
+  async function performanceExperiment(p, progress) {
+    var t0 = now();
+    var st = prepareImage(p.rgba, p.w, p.h, true), tSvd = now() - t0;
+    var ks = p.ks, rks = p.restoreKs || [], iters = p.iters || RESTORE_DEFAULT.iters, rows = [];
+    for (var j = 0; j < ks.length; j++) {
+      var k = Math.min(ks[j], st.ysvd.r), kc = Math.min(kcFor(ks[j]), st.cbsvd.r);
+      var t1 = now(), enc = await encodeState(st, k, kc, 5, false), tEnc = now() - t1;
+      var t2 = now(); await decodeAK(enc.bytes); var tDec = now() - t2;
+      var row = {
+        k: k, kc: kc, bytes: enc.bytes.length, raw: st.w * st.h * 3, rmse: rmseRGBA(enc.rgba, st.rgba),
+        tEnc: tEnc, tDec: tDec, rmseRestored: null, tRestore: null
+      };
+      if (rks.indexOf(ks[j]) >= 0) {
+        var r = await restoreAK(enc.bytes, { iters: iters });
+        row.rmseRestored = rmseRGBA(r.rgba, st.rgba);
+        row.tRestore = r.ms;
+      }
+      rows.push(row);
+      progress && progress({ stage: 'k', k: k, done: j + 1, total: ks.length });
+    }
+    return { w: st.w, h: st.h, tSvd: tSvd, rows: rows };
+  }
+
   var handlers = {
     load: function (p) {
       var st = prepareImage(new Uint8ClampedArray(p.rgba), p.w, p.h, true);
@@ -1315,6 +1352,9 @@
       var r = await restoreAK(new Uint8Array(p.bytes), p.opts, progress);
       return { res: r, transfer: [r.rgba.buffer] };
     },
+    performance: async function (p, progress) {
+      return await performanceExperiment({ rgba: new Uint8ClampedArray(p.rgba), w: p.w, h: p.h, ks: p.ks, restoreKs: p.restoreKs, iters: p.iters }, progress);
+    },
     restorationExperiment: async function (p, progress) {
       var r = await restorationExperiment({
         gray: new Float64Array(p.gray), m: p.m, n: p.n, ks: p.ks, bits: p.bits, iters: p.iters, tau: p.tau,
@@ -1336,7 +1376,8 @@
     toF16: toF16, fromF16: fromF16, randomOrthonormal: randomOrthonormal, mulberry32: mulberry32, handlers: handlers,
     encodeAKV: encodeAKV, decodeAKV: decodeAKV, encodeVideo: encodeVideo, VIDEO_AUTO: VIDEO_AUTO,
     restoreAK: restoreAK, makePreimage: makePreimage, projectPreimage: projectPreimage, projectSide: projectSide, restoreChannel: restoreChannel, RESTORE_DEFAULT: RESTORE_DEFAULT,
-    completeMatrix: completeMatrix, restorationExperiment: restorationExperiment, psnrOf: psnrOf, preimageResidual: preimageResidual
+    completeMatrix: completeMatrix, restorationExperiment: restorationExperiment, psnrOf: psnrOf, preimageResidual: preimageResidual,
+    performanceExperiment: performanceExperiment, rmseRGBA: rmseRGBA, kcFor: kcFor
   };
 
   if (typeof module !== 'undefined' && module.exports) {
