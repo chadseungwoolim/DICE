@@ -26,7 +26,8 @@ export function OPTIONS() {
  * GET /api/nl?type=shelf&div=81                          → { div, items }
  */
 export async function GET(req: Request) {
-  const key = process.env.NL_API_KEY;
+  // Owner chose to keep the key in the code (public repo) so the site works without setting an env var.
+  const key = process.env.NL_API_KEY || "127fade30508a1893a922bb18c56cad86532e95b65a36336e6a2493a6a85aea7";
   if (!key) return json({ error: "서버에 국립중앙도서관 인증키(NL_API_KEY)가 설정되지 않았습니다." }, 503);
   const base = process.env.NL_API_BASE; // tests only
   const u = new URL(req.url);
