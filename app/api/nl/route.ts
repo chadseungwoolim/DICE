@@ -1,4 +1,5 @@
 import { nlDivision, nlSearch, TARGETS, type Target } from "@/lib/shelfworld/nl";
+import { recommendBooks } from "@/lib/shelfworld/recommendServer";
 
 // Seoul region: the National Library API answers fastest (and most reliably) from Korea.
 export const preferredRegion = "icn1";
@@ -38,6 +39,11 @@ export async function GET(req: Request) {
       if (!/^\d{2}$/.test(div)) return json({ error: "div는 두 자리 숫자여야 합니다." }, 400);
       const items = await nlDivision(key, div, base);
       return json({ div, items }, 200, true);
+    }
+    if (type === "recommend") {
+      const text = (u.searchParams.get("q") || "").trim().slice(0, 200);
+      if (!text) return json({ error: "어떤 책을 원하는지 적어 주세요." }, 400);
+      return json(await recommendBooks(key, text, base), 200, true);
     }
     const q = (u.searchParams.get("q") || "").trim().slice(0, 100);
     if (!q) return json({ error: "검색어를 입력하세요." }, 400);

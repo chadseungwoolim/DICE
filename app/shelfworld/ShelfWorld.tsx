@@ -15,9 +15,13 @@ const TARGETS: { v: Target; label: string }[] = [
   { v: "cheonggu", label: "청구기호" },
 ];
 const EXAMPLES = ["코스모스", "소년이 온다", "사피엔스", "모두의 딥러닝"];
+const ASK = ["엄청 재미있고 미스터리한 러시아 소설", "무서운 일본 소설", "우주에 관한 쉬운 과학책", "마음이 따뜻해지는 책"];
+type Mode = "recommend" | "search";
 
 interface List {
-  kind: "search" | "shelf";
+  kind: "search" | "shelf" | "recommend";
+  understood?: string[];
+  reasons?: Record<string, string[]>;
   title: string;
   total: number;
   page: number;
@@ -29,12 +33,13 @@ interface List {
 
 function where(p: Place | null): string {
   if (!p) return "서가 자리 없음";
-  return `${divisionCode(p.div)} ${divisionName(p.div)} · ${p.tier + 1}단 ${p.col + 1}번째`;
+  return `${divisionCode(p.div)} ${divisionName(p.div)} / ${p.tier + 1}단 ${p.col + 1}번째`;
 }
 
+interface Rec { book: Book; score: number; reasons: string[]; editions: number }
 async function api(params: Record<string, string>) {
   const res = await fetch(`${assetBase()}/api/nl?${new URLSearchParams(params)}`);
-  let body: { error?: string; total?: number; page?: number; items?: Book[] } = {};
+  let body: { error?: string; total?: number; page?: number; items?: Book[]; understood?: string[]; recs?: Rec[] } = {};
   try {
     body = await res.json();
   } catch {}
@@ -54,6 +59,7 @@ export default function ShelfWorld() {
 
   const [q, setQ] = useState("");
   const [target, setTarget] = useState<Target>("total");
+  const [mode, setMode] = useState<Mode>("recommend");
   const [list, setList] = useState<List | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -109,6 +115,29 @@ export default function ShelfWorld() {
       world.current = null;
     };
   }, []);
+
+  async function recommend(text: string) {
+    const s = text.trim();
+    if (!s) return;
+    const id = ++reqId.current;
+    setBusy(true);
+    setErr("");
+    try {
+      const res = await fetch(`${assetBase()}/api/nl?${new URLSearchParams({ type: "recommend", q: s })}`);
+      const r: { error?: string; understood?: string[]; items?: Rec[] } = await res.json().catch(() => ({}));
+      if (!res.ok || r.error) throw new Error(r.error || `요청 실패 (${res.status})`);
+      if (id !== reqId.current) return;
+      const recs = r.items || [];
+      const reasons: Record<string, string[]> = {};
+      for (const x of recs) reasons[x.book.id] = x.reasons;
+      setList({ kind: "recommend", title: `"${s}"`, total: recs.length, page: 1, items: recs.map((x) => x.book), understood: r.understood || [], reasons });
+      if (recs[0]) pick(recs[0].book);
+    } catch (e) {
+      if (id === reqId.current) setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (id === reqId.current) setBusy(false);
+    }
+  }
 
   async function search(query: string, t: Target, page = 1) {
     const s = query.trim();
@@ -218,7 +247,7 @@ export default function ShelfWorld() {
             <button {...hold("s")}>↓</button>
             <button {...hold("d")}>→</button>
           </div>
-          <div className="sw-keys label">WASD 이동 · Shift 달리기 · 드래그 회전 · 휠 확대 · E 서가 보기</div>
+          <div className="sw-keys label">WASD 이동 / Shift 달리기 / 드래그 회전 / 휠 확대 / E 서가 보기</div>
         </div>
 
         <aside className="sw-side">
@@ -226,27 +255,38 @@ export default function ShelfWorld() {
             className="sw-search"
             onSubmit={(e) => {
               e.preventDefault();
-              search(q, target);
+              if (mode === "recommend") recommend(q);
+              else search(q, target);
             }}
           >
-            <div className="seg">
-              {TARGETS.map((t) => (
-                <button type="button" key={t.v} data-on={target === t.v ? "1" : "0"} onClick={() => setTarget(t.v)}>
-                  {t.label}
-                </button>
-              ))}
+            <div className="seg sw-mode">
+              <button type="button" data-on={mode === "recommend" ? "1" : "0"} onClick={() => setMode("recommend")}>
+                추천받기
+              </button>
+              <button type="button" data-on={mode === "search" ? "1" : "0"} onClick={() => setMode("search")}>
+                직접 검색
+              </button>
             </div>
+            {mode === "search" && (
+              <div className="seg">
+                {TARGETS.map((t) => (
+                  <button type="button" key={t.v} data-on={target === t.v ? "1" : "0"} onClick={() => setTarget(t.v)}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="sw-qrow">
               <input
                 className="field big"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder={target === "cheonggu" ? "예: 813.7" : "서명, 저자, 키워드"}
-                aria-label="국립중앙도서관 소장 도서 검색"
-                maxLength={100}
+                placeholder={mode === "recommend" ? "어떤 책이 읽고 싶은지 적어 보세요" : target === "cheonggu" ? "예: 813.7" : "서명, 저자, 키워드"}
+                aria-label={mode === "recommend" ? "읽고 싶은 책 설명" : "국립중앙도서관 소장 도서 검색"}
+                maxLength={mode === "recommend" ? 200 : 100}
               />
               <button className="btn solid tall" disabled={busy || !q.trim()}>
-                검색
+                {mode === "recommend" ? "추천" : "검색"}
               </button>
             </div>
           </form>
@@ -296,23 +336,44 @@ export default function ShelfWorld() {
           )}
 
           <div className="sw-list-head">
-            <span className="label">{list ? (list.kind === "shelf" ? `서가 ${list.title}` : `검색 ${list.title}`) : "책 찾기"}</span>
+            <span className="label">
+              {list ? (list.kind === "shelf" ? `서가 ${list.title}` : list.kind === "recommend" ? "추천" : `검색 ${list.title}`) : mode === "recommend" ? "책 추천" : "책 찾기"}
+            </span>
             {list && <span className="num muted">{busy ? "불러오는 중" : `${list.total.toLocaleString("ko-KR")}권`}</span>}
           </div>
 
+          {list?.kind === "recommend" && list.understood && list.understood.length > 0 && (
+            <div className="sw-understood">
+              <span className="label">이렇게 이해했어요</span>
+              <div className="chips">
+                {list.understood.map((x) => (
+                  <span key={x} className="chip">
+                    {x}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="sw-list">
             {!list && !busy && (
               <div className="sw-empty">
-                <p className="note">국립중앙도서관 소장 도서 전체에서 찾습니다. 결과를 누르면 그 책의 자리에 불이 들어옵니다.</p>
+                <p className="note">
+                  {mode === "recommend"
+                    ? "읽고 싶은 책을 말하듯이 적으면 분야, 나라, 장르, 분위기를 읽어 국립중앙도서관 소장 도서에서 골라 드립니다. 고른 책의 자리에 불이 들어옵니다."
+                    : "국립중앙도서관 소장 도서 전체에서 찾습니다. 결과를 누르면 그 책의 자리에 불이 들어옵니다."}
+                </p>
                 <div className="chips">
-                  {EXAMPLES.map((x) => (
+                  {(mode === "recommend" ? ASK : EXAMPLES).map((x) => (
                     <button
                       key={x}
                       className="chip-btn"
                       onClick={() => {
                         setQ(x);
-                        setTarget("total");
-                        search(x, "total");
+                        if (mode === "recommend") recommend(x);
+                        else {
+                          setTarget("total");
+                          search(x, "total");
+                        }
                       }}
                     >
                       {x}
@@ -327,10 +388,11 @@ export default function ShelfWorld() {
               return (
                 <button key={b.id} className="sw-row" data-on={sel?.id === b.id ? "1" : "0"} onClick={() => pick(b)}>
                   <span className="sw-row-t">{b.title}</span>
-                  <span className="sw-row-m">{[b.author, b.publisher, b.year].filter(Boolean).join(" · ")}</span>
+                  <span className="sw-row-m">{[b.author, b.publisher, b.year].filter(Boolean).join(" / ")}</span>
+                  {list.reasons?.[b.id] && <span className="sw-row-why">{list.reasons[b.id].join(" / ")}</span>}
                   <span className="sw-row-c mono">
                     {b.callNo || "청구기호 없음"}
-                    <span className="muted"> · {p ? `${divisionCode(p.div)} 서가 ${p.tier + 1}단` : "자리 없음"}</span>
+                    <span className="muted"> / {p ? `${divisionCode(p.div)} 서가 ${p.tier + 1}단` : "자리 없음"}</span>
                   </span>
                 </button>
               );

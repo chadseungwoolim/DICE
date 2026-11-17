@@ -449,3 +449,7 @@ table.t tr[data-hl="1"] td { background: var(--faint); }
 @media (prefers-reduced-motion: reduce) {
   .sw-dot { animation: none; }
 }
+.sw-understood { padding: 8px 12px 10px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.sw-understood .chips { margin-top: 0; }
+.sw-row-why { font-size: 11px; color: var(--signal); line-height: 1.45; }
+.sw-mode button { font-size: 11px; letter-spacing: 0.08em; height: 32px; }
