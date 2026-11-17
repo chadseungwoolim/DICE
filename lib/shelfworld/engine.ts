@@ -2,6 +2,7 @@
 // white volumes, thin dark edges, grey spines, and the signal colour only for the book being located.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { CLASSES, divisionCode, divisionName } from "./kdc";
 import {
   BASE_Y, BOUNDS, COLS, CORRIDOR, HALF_X, SHELF_D, SHELF_H, START, TIER_H, TIERS, UNIT_W,
@@ -229,6 +230,39 @@ export function createWorld(host: HTMLElement, minimap: HTMLCanvasElement | null
   walker.position.set(START.x, 0, START.z);
   scene.add(walker);
 
+  // Character model (converted from the user's 3MF print file). The box figure above stays as a
+  // fallback until the model has loaded, or if it fails to load.
+  const CHAR_H = 1.6;
+  const avatar = new THREE.Group();
+  avatar.visible = false;
+  walker.add(avatar);
+  let avatarReady = false;
+  let disposed = false;
+  new GLTFLoader().load(
+    "/models/shelfworld-character.glb",
+    (gltf) => {
+      if (disposed) return;
+      const m = gltf.scene;
+      m.scale.setScalar(CHAR_H);
+      m.rotation.y = Math.PI; // the model faces +Z, the walker walks towards -Z
+      m.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        keep(mesh.geometry);
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mats.forEach((mt) => keep(mt));
+      });
+      avatar.add(m);
+      avatar.visible = true;
+      for (const o of [body, head, ...legs, ...arms]) o.visible = false;
+      avatarReady = true;
+    },
+    undefined,
+    () => {
+      /* keep the box figure */
+    },
+  );
+
   // ---------- locate marker ----------
   const led = new THREE.Mesh(keep(new THREE.BoxGeometry(colW * 1.05, 0.03, 0.03)), mSignal);
   const halo = new THREE.Mesh(keep(new THREE.BoxGeometry(1, 1, 1)), mSignal);
@@ -405,8 +439,18 @@ export function createWorld(host: HTMLElement, minimap: HTMLCanvasElement | null
       legs[1].rotation.x = -sw;
       arms[0].rotation.x = -sw * 0.8;
       arms[1].rotation.x = sw * 0.8;
+      if (avatarReady) {
+        const ph = tick * (keys.has("shift") ? 16 : 11);
+        avatar.position.y = Math.abs(Math.sin(ph)) * 0.12;
+        avatar.rotation.z = Math.sin(ph) * 0.09;
+        avatar.rotation.x = -0.08;
+      }
     } else {
       for (const l of [...legs, ...arms]) l.rotation.x *= 0.8;
+      avatar.position.y *= 0.8;
+      avatar.rotation.z *= 0.8;
+      avatar.rotation.x *= 0.8;
+      if (avatarReady && !reduced.matches) avatar.scale.y = 1 + Math.sin(tick * 2.2) * 0.015;
     }
     const p = walker.position;
     if (view === "walk") {
@@ -490,6 +534,7 @@ export function createWorld(host: HTMLElement, minimap: HTMLCanvasElement | null
       else keys.delete(key);
     },
     dispose() {
+      disposed = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
       scheme.removeEventListener("change", onScheme);
