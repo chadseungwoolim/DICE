@@ -309,8 +309,12 @@ table.t tr[data-hl="1"] td { background: var(--faint); }
 /* SHELFWORLD corner banner (deliberately loud, unlike the rest)       */
 /* Blink speed stays at about 1.25 flashes per second (under 3 Hz).    */
 /* ================================================================== */
-.sw-ad {
+.sw-corner {
   position: fixed; right: 16px; bottom: 58px; z-index: 40;
+  display: flex; flex-direction: column; align-items: stretch; gap: 12px;
+}
+.sw-ad {
+  position: relative; overflow: hidden;
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 10px 18px 11px; min-width: 176px;
   font-family: var(--sans); font-weight: 900; line-height: 1.1; color: #fff; text-align: center;
@@ -342,9 +346,31 @@ table.t tr[data-hl="1"] td { background: var(--faint); }
 @keyframes sw-blink { 0% { opacity: 1; } 50% { opacity: 0.15; } }
 @keyframes sw-nudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(4px); } }
 @media (max-width: 560px) {
-  .sw-ad { right: 10px; bottom: 54px; min-width: 0; padding: 7px 12px 8px; border-radius: 12px; }
+  .sw-corner { right: 10px; bottom: 54px; gap: 8px; }
+  .sw-ad { min-width: 0; padding: 7px 12px 8px; border-radius: 12px; }
   .sw-ad-name { font-size: 16px; }
   .sw-ad-go { font-size: 12px; }
+}
+/* ORBIT banner: same loud ad, in ORBIT's white and blue with pulsing orbit rings */
+.ob-ad {
+  background: linear-gradient(90deg, #0040ff, #007aff, #5ac8fa, #ffffff, #5ac8fa, #007aff, #0040ff);
+  background-size: 400% 100%;
+  animation: sw-slide 2.4s linear infinite, sw-pulse 0.8s ease-in-out infinite reverse, ob-glow 1.6s linear infinite;
+}
+.ob-ad > span:not(.ob-rings) { position: relative; z-index: 1; }
+.ob-rings, .ob-rings::before, .ob-rings::after {
+  position: absolute; left: 50%; top: 50%; width: 60%; aspect-ratio: 1; border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.85); transform: translate(-50%, -50%) scale(0.2);
+  animation: ob-ring 1.8s ease-out infinite; pointer-events: none;
+}
+.ob-rings::before, .ob-rings::after { content: ""; width: 100%; }
+.ob-rings::before { animation-delay: 0.6s; }
+.ob-rings::after { animation-delay: 1.2s; }
+@keyframes ob-ring { 0% { opacity: 0.9; transform: translate(-50%, -50%) scale(0.2); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6); } }
+@keyframes ob-glow {
+  0% { box-shadow: 0 0 14px 3px #007aff, 0 0 0 3px #000; }
+  50% { box-shadow: 0 0 18px 5px #5ac8fa, 0 0 0 3px #000; }
+  100% { box-shadow: 0 0 14px 3px #007aff, 0 0 0 3px #000; }
 }
 /* centred popup version */
 .sw-pop {
@@ -352,13 +378,19 @@ table.t tr[data-hl="1"] td { background: var(--faint); }
   display: flex; align-items: center; justify-content: center; padding: 16px;
   background: rgba(0, 0, 0, 0.55);
 }
-.sw-pop-box { display: flex; flex-direction: column; align-items: center; gap: 22px; width: min(560px, 100%); }
+.sw-pop-box { display: flex; flex-direction: column; align-items: center; gap: 22px; width: min(960px, 100%); }
+.sw-pop-ads { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; width: 100%; }
+@media (max-width: 720px) {
+  .sw-pop-ads { grid-template-columns: 1fr; gap: 18px; }
+  .sw-ad.sw-ad-big { padding: 18px 16px 20px; gap: 4px; }
+  .sw-ad-big .sw-ad-name { font-size: clamp(30px, 10vw, 44px); }
+}
 .sw-ad.sw-ad-big {
   position: static; width: 100%; min-width: 0; gap: 8px;
   padding: 30px 24px 32px; border-width: 5px; border-radius: 26px;
 }
 .sw-ad-big .sw-ad-hot { font-size: 14px; padding: 4px 14px; }
-.sw-ad-big .sw-ad-name { font-size: clamp(36px, 10vw, 64px); letter-spacing: 0.04em; }
+.sw-ad-big .sw-ad-name { font-size: clamp(36px, 5.6vw, 56px); letter-spacing: 0.04em; }
 .sw-ad-sub { font-size: clamp(18px, 4.5vw, 26px); letter-spacing: 0.3em; }
 .sw-ad-big .sw-ad-go { font-size: clamp(18px, 5vw, 28px); margin-top: 4px; }
 .sw-pop-actions { display: flex; gap: 10px; }
@@ -371,7 +403,7 @@ table.t tr[data-hl="1"] td { background: var(--faint); }
 /* leave room so the banner never sits on top of the last inbox row */
 .home { padding-bottom: 150px; }
 @media (prefers-reduced-motion: reduce) {
-  .sw-ad, .sw-ad-hot, .sw-ad-arrow { animation: none; }
+  .sw-ad, .sw-ad-hot, .sw-ad-arrow, .ob-rings, .ob-rings::before, .ob-rings::after { animation: none; }
 }
 
 /* ================================================================== */

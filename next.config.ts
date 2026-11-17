@@ -10,7 +10,11 @@ const nextConfig: NextConfig = {
     ? { output: "export", trailingSlash: true, images: { unoptimized: true } }
     : {
         async redirects() {
-          return [{ source: "/shelfworld/index.html", destination: "/shelfworld", permanent: false }];
+          return [
+            { source: "/shelfworld/index.html", destination: "/shelfworld", permanent: false },
+            // ORBIT is a prebuilt static app in public/orbit; its assets are relative to /orbit/index.html.
+            { source: "/orbit", destination: "/orbit/index.html", permanent: false },
+          ];
         },
         async headers() {
           return [
