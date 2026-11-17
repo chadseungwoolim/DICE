@@ -346,6 +346,28 @@ table.t tr[data-hl="1"] td { background: var(--faint); }
   .sw-ad-name { font-size: 16px; }
   .sw-ad-go { font-size: 12px; }
 }
+/* centred popup version */
+.sw-pop {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.sw-pop-box { display: flex; flex-direction: column; align-items: center; gap: 22px; width: min(560px, 100%); }
+.sw-ad.sw-ad-big {
+  position: static; width: 100%; min-width: 0; gap: 8px;
+  padding: 30px 24px 32px; border-width: 5px; border-radius: 26px;
+}
+.sw-ad-big .sw-ad-hot { font-size: 14px; padding: 4px 14px; }
+.sw-ad-big .sw-ad-name { font-size: clamp(36px, 10vw, 64px); letter-spacing: 0.04em; }
+.sw-ad-sub { font-size: clamp(18px, 4.5vw, 26px); letter-spacing: 0.3em; }
+.sw-ad-big .sw-ad-go { font-size: clamp(18px, 5vw, 28px); margin-top: 4px; }
+.sw-pop-actions { display: flex; gap: 10px; }
+.sw-pop-actions button {
+  height: 40px; padding: 0 18px; border: 1px solid #fff; border-radius: 0;
+  background: rgba(0, 0, 0, 0.6); color: #fff; font: inherit; font-size: 13px; letter-spacing: 0.04em; cursor: pointer;
+}
+.sw-pop-actions button:hover { background: #fff; color: #000; }
+.sw-pop-actions button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 /* leave room so the banner never sits on top of the last inbox row */
 .home { padding-bottom: 150px; }
 @media (prefers-reduced-motion: reduce) {
