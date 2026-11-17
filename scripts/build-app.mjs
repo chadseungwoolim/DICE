@@ -6,8 +6,11 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, readFileSync } from "node:fs";
 
-const dyn = "app/v/[id]";
-const aside = ".app-build-aside/v-id";
+// Route handlers (app/api) need a server, so they are moved aside too; the app calls the website's API instead.
+const asides = [
+  ["app/v/[id]", ".app-build-aside/v-id"],
+  ["app/api", ".app-build-aside/api"],
+];
 
 function envFile() {
   try {
@@ -22,13 +25,14 @@ const fe = envFile();
 const webUrl = process.env.NEXT_PUBLIC_WEB_URL || fe.NEXT_PUBLIC_WEB_URL || "";
 if (!webUrl) console.warn("WARNING: NEXT_PUBLIC_WEB_URL is not set. Share links created inside the app will have no domain.");
 
-let moved = false;
+const moved = [];
 try {
-  if (existsSync(dyn)) {
+  for (const [dir, aside] of asides) {
+    if (!existsSync(dir)) continue;
     mkdirSync(".app-build-aside", { recursive: true });
     rmSync(aside, { recursive: true, force: true });
-    renameSync(dyn, aside);
-    moved = true;
+    renameSync(dir, aside);
+    moved.push([dir, aside]);
   }
   rmSync(".next", { recursive: true, force: true });
   rmSync("out", { recursive: true, force: true });
@@ -51,9 +55,7 @@ try {
     }
   }
 } finally {
-  if (moved) {
-    renameSync(aside, dyn);
-    rmSync(".app-build-aside", { recursive: true, force: true });
-  }
+  for (const [dir, aside] of moved) renameSync(aside, dir);
+  if (moved.length) rmSync(".app-build-aside", { recursive: true, force: true });
 }
 console.log("static app bundle ready in ./out");

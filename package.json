@@ -10,7 +10,7 @@
     "app:build": "node scripts/build-app.mjs",
     "app:sync": "node scripts/build-app.mjs && npx cap sync android",
     "app:open": "npx cap open android",
-    "test:shelfworld": "node --test scripts/test-shelfworld.mjs"
+    "test:shelfworld": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test scripts/test-shelfworld.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
@@ -26,13 +26,15 @@
     "fix-webm-duration": "^1.0.6",
     "next": "16.3.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "three": "0.180.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "0.180.0",
     "typescript": "^5"
   }
 }
