@@ -9,7 +9,8 @@
     "test:core": "node scripts/test-core.mjs",
     "app:build": "node scripts/build-app.mjs",
     "app:sync": "node scripts/build-app.mjs && npx cap sync android",
-    "app:open": "npx cap open android"
+    "app:open": "npx cap open android",
+    "test:shelfworld": "node --test scripts/test-shelfworld.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

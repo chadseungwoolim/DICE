@@ -304,3 +304,50 @@ table.t tr[data-hl="1"] td { background: var(--faint); }
   .acct { padding: 0 12px; }
   .lab-link { padding: 0 9px !important; font-size: 10px !important; letter-spacing: 0.06em !important; }
 }
+
+/* ================================================================== */
+/* SHELFWORLD corner banner (deliberately loud, unlike the rest)       */
+/* Blink speed stays at about 1.25 flashes per second (under 3 Hz).    */
+/* ================================================================== */
+.sw-ad {
+  position: fixed; right: 16px; bottom: 58px; z-index: 40;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 18px 11px; min-width: 176px;
+  font-family: var(--sans); font-weight: 900; line-height: 1.1; color: #fff; text-align: center;
+  background: linear-gradient(90deg, #ff004c, #ff8a00, #ffe600, #2bff00, #00e1ff, #3d5bff, #c400ff, #ff004c);
+  background-size: 400% 100%;
+  border: 3px solid #fff; border-radius: 14px;
+  text-shadow: 0 0 4px #000, 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  animation: sw-slide 2.4s linear infinite, sw-pulse 0.8s ease-in-out infinite, sw-glow 1.6s linear infinite;
+  -webkit-tap-highlight-color: transparent;
+}
+.sw-ad:hover { animation-duration: 1.2s, 0.4s, 0.8s; }
+.sw-ad:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+.sw-ad-hot {
+  font-size: 10px; letter-spacing: 0.2em; color: #ffe600; background: #000; padding: 2px 8px; border-radius: 99px;
+  text-shadow: none; animation: sw-blink 0.8s steps(1, end) infinite;
+}
+.sw-ad-name { font-size: 20px; letter-spacing: 0.06em; }
+.sw-ad-go { font-size: 14px; letter-spacing: 0.02em; }
+.sw-ad-arrow { display: inline-block; animation: sw-nudge 0.8s ease-in-out infinite; }
+@keyframes sw-slide { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+@keyframes sw-pulse { 0%, 100% { transform: scale(1) rotate(-1.5deg); } 50% { transform: scale(1.07) rotate(1.5deg); } }
+@keyframes sw-glow {
+  0% { box-shadow: 0 0 14px 3px #ff004c, 0 0 0 3px #000; }
+  25% { box-shadow: 0 0 14px 3px #ffe600, 0 0 0 3px #000; }
+  50% { box-shadow: 0 0 14px 3px #00e1ff, 0 0 0 3px #000; }
+  75% { box-shadow: 0 0 14px 3px #c400ff, 0 0 0 3px #000; }
+  100% { box-shadow: 0 0 14px 3px #ff004c, 0 0 0 3px #000; }
+}
+@keyframes sw-blink { 0% { opacity: 1; } 50% { opacity: 0.15; } }
+@keyframes sw-nudge { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(4px); } }
+@media (max-width: 560px) {
+  .sw-ad { right: 10px; bottom: 54px; min-width: 0; padding: 7px 12px 8px; border-radius: 12px; }
+  .sw-ad-name { font-size: 16px; }
+  .sw-ad-go { font-size: 12px; }
+}
+/* leave room so the banner never sits on top of the last inbox row */
+.home { padding-bottom: 150px; }
+@media (prefers-reduced-motion: reduce) {
+  .sw-ad, .sw-ad-hot, .sw-ad-arrow { animation: none; }
+}

@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
   ...(app
     ? { output: "export", trailingSlash: true, images: { unoptimized: true } }
     : {
+        async redirects() {
+          return [{ source: "/shelfworld", destination: "/shelfworld/index.html", permanent: false }];
+        },
         async headers() {
           return [
             {
