@@ -193,7 +193,7 @@ export default function ShelfWorld() {
       <div className="section-head">
         <div>
           <div className="label">SHELFWORLD</div>
-          <h1 className="h2">국립중앙도서관의 모든 책이 꽂힌 서가</h1>
+          <h1 className="h2">智能書架</h1>
         </div>
         <p className="note sw-lede">
           소장 도서를 검색하면 KDC 청구기호에 해당하는 자리의 LED가 깜빡입니다. 서가 앞에서 E를 누르면 그 분류의 책을 불러옵니다.
